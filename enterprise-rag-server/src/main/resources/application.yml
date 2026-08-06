@@ -5,6 +5,11 @@ spring:
   application:
     name: enterprise-rag-backend
 
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 55MB
+
   datasource:
     url: jdbc:mysql://localhost:3306/enterprise_rag_db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
     username: ${mysql_username}
@@ -51,3 +56,12 @@ jwt:
   refresh-token:
     secret: ${JWT_REFRESH_SECRET:your-refresh-token-secret-key-at-least-256-bits-long-for-hs256}
     expiration: 604800000
+
+aliyun:
+  oss:
+    enabled: ${OSS_ENABLED:false}
+    endpoint: ${OSS_ENDPOINT:}
+    region: ${OSS_REGION:}
+    bucket: ${OSS_BUCKET:}
+    object-prefix: ${OSS_OBJECT_PREFIX:enterprise-rag}
+    signed-url-expiration-minutes: ${OSS_SIGNED_URL_EXPIRATION_MINUTES:10}

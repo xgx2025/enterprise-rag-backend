@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableAsync;
 
 /**
  * Enterprise RAG 后端启动类。
@@ -12,7 +13,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * MyBatis-Plus Mapper 扫描 {@code com.hope.enterpriserag.system.mapper}。
  */
 @Slf4j
-@MapperScan("com.hope.enterpriserag.system.mapper")
+@EnableAsync
+@MapperScan({"com.hope.enterpriserag.system.mapper", "com.hope.enterpriserag.knowledge.mapper"})
 @SpringBootApplication(scanBasePackages = "com.hope.enterpriserag")
 public class EnterpriseRagBackendApplication {
 
