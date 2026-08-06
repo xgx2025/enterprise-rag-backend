@@ -1,0 +1,36 @@
+2026-08-06 12:02:03.773 [background-preinit] INFO  o.h.validator.internal.util.Version - HV000001: Hibernate Validator 9.1.0.Final
+2026-08-06 12:02:03.808 [main] INFO  c.h.e.s.EnterpriseRagBackendApplication - Starting EnterpriseRagBackendApplication using Java 21.0.9 with PID 51056 (D:\Code\my-project\enterprise-rag\enterprise-rag-backend\enterprise-rag-server\target\classes started by 谢光湘 in D:\Code\my-project\enterprise-rag\enterprise-rag-backend)
+2026-08-06 12:02:03.809 [main] INFO  c.h.e.s.EnterpriseRagBackendApplication - No active profile set, falling back to 1 default profile: "default"
+2026-08-06 12:02:04.476 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Multiple Spring Data modules found, entering strict repository configuration mode
+2026-08-06 12:02:04.478 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2026-08-06 12:02:04.501 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Finished Spring Data repository scanning in 10 ms. Found 0 Redis repository interfaces.
+2026-08-06 12:02:05.104 [main] INFO  o.s.boot.tomcat.TomcatWebServer - Tomcat initialized with port 8080 (http)
+2026-08-06 12:02:05.117 [main] INFO  o.a.coyote.http11.Http11NioProtocol - Initializing ProtocolHandler ["http-nio-8080"]
+2026-08-06 12:02:05.119 [main] INFO  o.a.catalina.core.StandardService - Starting service [Tomcat]
+2026-08-06 12:02:05.119 [main] INFO  o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/11.0.22]
+2026-08-06 12:02:05.170 [main] INFO  o.s.b.w.c.s.WebApplicationContextInitializer - Root WebApplicationContext: initialization completed in 1314 ms
+2026-08-06 12:02:05.304 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Starting...
+2026-08-06 12:02:05.604 [main] INFO  com.zaxxer.hikari.pool.HikariPool - HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@28fa541
+2026-08-06 12:02:05.605 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Start completed.
+2026-08-06 12:02:06.345 [main] WARN  o.s.b.s.a.UserDetailsServiceAutoConfiguration - 
+
+Using generated security password: 7218765a-d480-4671-921a-e8e830c16db6
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
+2026-08-06 12:02:06.353 [main] INFO  o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer - Global AuthenticationManager configured with UserDetailsService bean with name inMemoryUserDetailsManager
+2026-08-06 12:02:06.683 [main] INFO  c.b.m.s.MybatisPlusApplicationContextAware - Register ApplicationContext instances org.springframework.boot.web.server.servlet.context.AnnotationConfigServletWebServerApplicationContext@1ea9f009
+2026-08-06 12:02:06.884 [main] INFO  o.a.coyote.http11.Http11NioProtocol - Starting ProtocolHandler ["http-nio-8080"]
+2026-08-06 12:02:06.900 [main] INFO  o.s.boot.tomcat.TomcatWebServer - Tomcat started on port 8080 (http) with context path '/'
+2026-08-06 12:02:06.908 [main] INFO  c.h.e.s.EnterpriseRagBackendApplication - Started EnterpriseRagBackendApplication in 3.656 seconds (process running for 4.27)
+2026-08-06 12:02:06.910 [main] INFO  c.h.e.s.EnterpriseRagBackendApplication - Enterprise RAG 后端服务启动完成
+2026-08-06 12:02:25.603 [http-nio-8080-exec-1] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-08-06 12:02:25.603 [http-nio-8080-exec-1] INFO  o.s.web.servlet.DispatcherServlet - Initializing Servlet 'dispatcherServlet'
+2026-08-06 12:02:25.605 [http-nio-8080-exec-1] INFO  o.s.web.servlet.DispatcherServlet - Completed initialization in 2 ms
+2026-08-06 12:02:25.784 [http-nio-8080-exec-1] INFO  c.h.e.s.controller.AuthController - 用户登录请求: username=xgx
+2026-08-06 12:02:26.901 [http-nio-8080-exec-1] INFO  c.h.e.s.service.impl.AuthServiceImpl - 用户登录成功: userId=2085198257533259776, tenantId=1
+2026-08-06 12:02:26.914 [http-nio-8080-exec-1] INFO  c.h.e.s.controller.AuthController - 用户登录成功: userId=2085198257533259776
+2026-08-06 12:06:56.526 [SpringApplicationShutdownHook] INFO  o.s.boot.tomcat.GracefulShutdown - Commencing graceful shutdown. Waiting for active requests to complete
+2026-08-06 12:06:56.536 [tomcat-shutdown] INFO  o.s.boot.tomcat.GracefulShutdown - Graceful shutdown complete
+2026-08-06 12:06:56.553 [SpringApplicationShutdownHook] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown initiated...
+2026-08-06 12:06:56.560 [SpringApplicationShutdownHook] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown completed.

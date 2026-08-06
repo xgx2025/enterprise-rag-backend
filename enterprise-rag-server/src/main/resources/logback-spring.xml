@@ -1,0 +1,54 @@
+<configuration>
+    <!-- 日志路径和文件名属性 -->
+    <property name="LOG_PATH" value="logs/" />
+    <property name="LOG_FILE_NAME" value="enterprise-rag" />
+
+    <!-- 颜色配置 -->
+    <conversionRule conversionWord="clr" class="org.springframework.boot.logging.logback.ColorConverter" />
+    <conversionRule conversionWord="wex" class="org.springframework.boot.logging.logback.WhitespaceThrowableProxyConverter" />
+    <conversionRule conversionWord="wEx" class="org.springframework.boot.logging.logback.ExtendedWhitespaceThrowableProxyConverter" />
+
+    <!-- 1. 文件日志输出 - 带颜色 -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}${LOG_FILE_NAME}.log</file>
+        <!-- 按天+大小管理日志滚动，第二天自动压缩为.gz文件 -->
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <!-- 使用 .gz 压缩格式，每天日期变化时自动压缩 -->
+            <fileNamePattern>${LOG_PATH}${LOG_FILE_NAME}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>5</maxHistory>
+            <totalSizeCap>10GB</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 2. 控制台 Appender - 带颜色 -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>DEBUG</level>
+        </filter>
+        <encoder>
+            <!-- 控制台输出 - 彩色日志级别和线程 -->
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %clr([%thread]){cyan} %clr(%-5level){magenta} %clr(%logger{36}){blue} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 3. 异步 Appender（不丢弃日志） -->
+    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>8192</queueSize>
+        <neverBlock>false</neverBlock> <!-- 队列满时阻塞，确保日志不丢失 -->
+        <discardingThreshold>0</discardingThreshold> <!-- 不丢弃任何级别日志 -->
+        <appender-ref ref="FILE"/>
+    </appender>
+
+    <!-- 4. 根日志级别和输出目标 -->
+    <root level="INFO">
+        <appender-ref ref="ASYNC_FILE"/> <!-- 异步写入文件 -->
+        <appender-ref ref="CONSOLE"/> <!-- 控制台输出（生产环境可注释） -->
+    </root>
+</configuration>
