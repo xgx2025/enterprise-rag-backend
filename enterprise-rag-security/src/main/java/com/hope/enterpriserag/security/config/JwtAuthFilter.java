@@ -55,14 +55,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                             new UsernamePasswordAuthenticationToken(
                                     user, null,
                                     List.of(new SimpleGrantedAuthority("ROLE_USER")));
-                    authentication.setAuthenticated(true);
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                     log.debug("JWT认证成功: userId={}, requestUri={}", userId, request.getRequestURI());
                 } else {
                     log.debug("JWT认证跳过-用户不可用: userId={}", userId);
                 }
             } catch (Exception e) {
-                log.warn("JWT解析异常: requestUri={}, error={}", request.getRequestURI(), e.getMessage());
+                log.warn("JWT认证处理异常: requestUri={}, error={}",
+                        request.getRequestURI(), e.getMessage(), e);
             }
         }
 
