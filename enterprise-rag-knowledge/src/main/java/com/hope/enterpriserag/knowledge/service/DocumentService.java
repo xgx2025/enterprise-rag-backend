@@ -2,6 +2,7 @@ package com.hope.enterpriserag.knowledge.service;
 
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hope.enterpriserag.common.exception.BusinessException;
 import com.hope.enterpriserag.knowledge.dto.DocumentChunkResponse;
@@ -13,6 +14,8 @@ import com.hope.enterpriserag.knowledge.entity.DocumentChunk;
 import com.hope.enterpriserag.knowledge.entity.IngestionTask;
 import com.hope.enterpriserag.knowledge.entity.KnowledgeDocument;
 import com.hope.enterpriserag.knowledge.event.DocumentUploadedEvent;
+import com.hope.enterpriserag.knowledge.event.DocumentVectorMetadataEvent;
+import com.hope.enterpriserag.knowledge.event.DocumentVectorizationEvent;
 import com.hope.enterpriserag.knowledge.mapper.DocumentChunkMapper;
 import com.hope.enterpriserag.knowledge.mapper.IngestionTaskMapper;
 import com.hope.enterpriserag.knowledge.mapper.KnowledgeDocumentMapper;
@@ -192,12 +195,17 @@ public class DocumentService {
             if (!"COMPLETED".equals(document.getParseStatus())) {
                 throw new BusinessException("文档尚未解析完成，不能发布");
             }
+            if (!"COMPLETED".equals(document.getEmbeddingStatus())) {
+                throw new BusinessException("文档尚未向量化完成，不能发布");
+            }
             if (document.getReplacesDocumentId() != null) {
                 KnowledgeDocument replaced = requireOwned(tenantId, document.getReplacesDocumentId());
                 replaced.setStatus("EXPIRED");
                 replaced.setEffectiveTo(document.getEffectiveFrom());
                 replaced.setUpdatedAt(LocalDateTime.now());
                 documentMapper.updateById(replaced);
+                eventPublisher.publishEvent(new DocumentVectorMetadataEvent(tenantId, replaced.getId(),
+                        DocumentVectorMetadataEvent.Action.SYNC));
                 log.info("替代文档已自动失效: tenantId={}, documentId={}, replacedDocumentId={}",
                         tenantId, id, replaced.getId());
             }
@@ -211,6 +219,8 @@ public class DocumentService {
         document.setStatus(target);
         document.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(document);
+        eventPublisher.publishEvent(new DocumentVectorMetadataEvent(tenantId, id,
+                DocumentVectorMetadataEvent.Action.SYNC));
         log.info("文档状态更新成功: tenantId={}, documentId={}, previousStatus={}, targetStatus={}",
                 tenantId, id, previousStatus, target);
     }
@@ -226,29 +236,56 @@ public class DocumentService {
         document.setDeleted(1);
         document.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(document);
+        eventPublisher.publishEvent(new DocumentVectorMetadataEvent(tenantId, id,
+                DocumentVectorMetadataEvent.Action.DELETE));
         log.info("文档已归档，OSS原文件继续保留: tenantId={}, documentId={}", tenantId, id);
     }
 
-    /** 清理失败分块并重新提交解析任务。 */
+    /** 根据失败阶段重新提交解析任务或仅重跑向量化，避免无意义地重复下载原文件。 */
     @Transactional
     public void retry(Long tenantId, Long id) {
-        KnowledgeDocument document = requireOwned(tenantId, id);
+        KnowledgeDocument document = requireOwnedForUpdate(tenantId, id);
         if (!"FAILED".equals(document.getStatus())) {
             throw new BusinessException("仅处理失败的文档可以重试");
         }
-        chunkMapper.delete(new LambdaQueryWrapper<DocumentChunk>().eq(DocumentChunk::getDocumentId, id));
-        document.setStatus("PROCESSING");
-        document.setParseStatus("PENDING");
-        document.setEmbeddingStatus("PENDING");
-        document.setProcessProgress(0);
-        document.setFailureStage(null);
-        document.setFailureMessage(null);
-        document.setChunkCount(0);
-        document.setUpdatedAt(LocalDateTime.now());
-        documentMapper.updateById(document);
-
         int retryCount = Math.toIntExact(taskMapper.selectCount(new LambdaQueryWrapper<IngestionTask>()
                 .eq(IngestionTask::getDocumentId, id)));
+        boolean vectorOnly = "EMBEDDING".equals(document.getFailureStage())
+                && "COMPLETED".equals(document.getParseStatus())
+                && chunkMapper.selectCount(new LambdaQueryWrapper<DocumentChunk>()
+                        .eq(DocumentChunk::getTenantId, tenantId)
+                        .eq(DocumentChunk::getDocumentId, id)
+                        .isNotNull(DocumentChunk::getParentChunkId)) > 0;
+
+        document.setStatus("PROCESSING");
+        document.setEmbeddingStatus("PENDING");
+        document.setFailureStage(null);
+        document.setFailureMessage(null);
+        document.setUpdatedAt(LocalDateTime.now());
+        if (vectorOnly) {
+            document.setProcessProgress(70);
+            chunkMapper.update(null, new UpdateWrapper<DocumentChunk>()
+                    .eq("tenant_id", tenantId)
+                    .eq("document_id", id)
+                    .isNotNull("parent_chunk_id")
+                    .set("embedding_status", "PENDING"));
+            documentMapper.updateById(document);
+            IngestionTask task = createTask(document, retryCount, "VECTORIZE", "WAITING_VECTOR", 70,
+                    "EMBEDDING_PENDING");
+            taskMapper.insert(task);
+            eventPublisher.publishEvent(new DocumentVectorizationEvent(id, task.getId()));
+            log.info("文档向量化重试任务已提交: tenantId={}, documentId={}, taskId={}, retryCount={}",
+                    tenantId, id, task.getId(), retryCount);
+            return;
+        }
+
+        chunkMapper.delete(new LambdaQueryWrapper<DocumentChunk>()
+                .eq(DocumentChunk::getTenantId, tenantId)
+                .eq(DocumentChunk::getDocumentId, id));
+        document.setParseStatus("PENDING");
+        document.setProcessProgress(0);
+        document.setChunkCount(0);
+        documentMapper.updateById(document);
         IngestionTask task = createTask(document, retryCount);
         taskMapper.insert(task);
         eventPublisher.publishEvent(new DocumentUploadedEvent(id, task.getId()));
@@ -293,16 +330,35 @@ public class DocumentService {
         return document;
     }
 
+    /** 在写事务中锁定当前租户文档，防止并发重试创建多个摄取任务。 */
+    private KnowledgeDocument requireOwnedForUpdate(Long tenantId, Long id) {
+        KnowledgeDocument document = documentMapper.selectOne(new LambdaQueryWrapper<KnowledgeDocument>()
+                .eq(KnowledgeDocument::getId, id)
+                .eq(KnowledgeDocument::getTenantId, tenantId)
+                .eq(KnowledgeDocument::getDeleted, 0)
+                .last("FOR UPDATE"));
+        if (document == null) {
+            log.warn("文档重试失败-资源不存在、已归档或不属于当前租户: tenantId={}, documentId={}", tenantId, id);
+            throw new BusinessException(404, "文档不存在");
+        }
+        return document;
+    }
+
     private IngestionTask createTask(KnowledgeDocument document, int retryCount) {
+        return createTask(document, retryCount, "PARSE_AND_CHUNK", "PENDING", 0, "WAITING");
+    }
+
+    private IngestionTask createTask(KnowledgeDocument document, int retryCount, String taskType,
+                                     String status, int progress, String stage) {
         LocalDateTime now = LocalDateTime.now();
         IngestionTask task = new IngestionTask();
         task.setId(IdUtil.getSnowflakeNextId());
         task.setTenantId(document.getTenantId());
         task.setDocumentId(document.getId());
-        task.setTaskType("PARSE_AND_CHUNK");
-        task.setStatus("PENDING");
-        task.setProgress(0);
-        task.setCurrentStage("WAITING");
+        task.setTaskType(taskType);
+        task.setStatus(status);
+        task.setProgress(progress);
+        task.setCurrentStage(stage);
         task.setRetryCount(retryCount);
         task.setCreatedAt(now);
         task.setUpdatedAt(now);

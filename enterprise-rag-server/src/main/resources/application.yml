@@ -65,3 +65,23 @@ aliyun:
     bucket: ${OSS_BUCKET:}
     object-prefix: ${OSS_OBJECT_PREFIX:enterprise-rag}
     signed-url-expiration-minutes: ${OSS_SIGNED_URL_EXPIRATION_MINUTES:10}
+
+rag:
+  vectorization:
+    enabled: ${RAG_VECTORIZATION_ENABLED:false}
+    batch-size: ${RAG_VECTORIZATION_BATCH_SIZE:16}
+  embedding:
+    endpoint: ${EMBEDDING_ENDPOINT:}
+    api-key: ${EMBEDDING_API_KEY:}
+    model: ${EMBEDDING_MODEL:}
+    dimensions: ${EMBEDDING_DIMENSIONS:1024}
+    send-dimensions: ${EMBEDDING_SEND_DIMENSIONS:false}
+    connect-timeout-millis: ${EMBEDDING_CONNECT_TIMEOUT_MILLIS:5000}
+    request-timeout-millis: ${EMBEDDING_REQUEST_TIMEOUT_MILLIS:60000}
+    max-attempts: ${EMBEDDING_MAX_ATTEMPTS:3}
+    retry-delay-millis: ${EMBEDDING_RETRY_DELAY_MILLIS:500}
+  milvus:
+    uri: ${MILVUS_URI:http://localhost:19530}
+    token: ${MILVUS_TOKEN:}
+    database-name: ${MILVUS_DATABASE:default}
+    collection-name: ${MILVUS_COLLECTION:enterprise_rag_chunks}

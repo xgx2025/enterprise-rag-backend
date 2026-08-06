@@ -53,7 +53,7 @@ public class KnowledgeDocument {
     private Long replacesDocumentId;
     /** 文本解析状态。 */
     private String parseStatus;
-    /** 向量化状态。 */
+    /** 向量化状态：{@code PENDING}、{@code RUNNING}、{@code COMPLETED} 或 {@code FAILED}。 */
     private String embeddingStatus;
     /** 摄取处理进度百分比，范围为 0 至 100。 */
     private Integer processProgress;

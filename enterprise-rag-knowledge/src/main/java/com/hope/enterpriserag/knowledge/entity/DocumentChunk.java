@@ -33,7 +33,7 @@ public class DocumentChunk {
     private Integer pageNumber;
     /** 用于评估模型上下文占用的 Token 估算值。 */
     private Integer tokenCount;
-    /** 向量化状态，例如 {@code PENDING}、{@code COMPLETED}。 */
+    /** 向量化状态：{@code PENDING}、{@code RUNNING}、{@code COMPLETED} 或 {@code FAILED}。 */
     private String embeddingStatus;
     /** 分块类型等扩展元数据 JSON。 */
     private String metadataJson;

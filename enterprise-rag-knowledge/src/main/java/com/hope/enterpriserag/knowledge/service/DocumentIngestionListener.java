@@ -6,6 +6,7 @@ import com.hope.enterpriserag.knowledge.entity.DocumentChunk;
 import com.hope.enterpriserag.knowledge.entity.IngestionTask;
 import com.hope.enterpriserag.knowledge.entity.KnowledgeDocument;
 import com.hope.enterpriserag.knowledge.event.DocumentUploadedEvent;
+import com.hope.enterpriserag.knowledge.event.DocumentVectorizationEvent;
 import com.hope.enterpriserag.knowledge.mapper.DocumentChunkMapper;
 import com.hope.enterpriserag.knowledge.mapper.IngestionTaskMapper;
 import com.hope.enterpriserag.knowledge.mapper.KnowledgeDocumentMapper;
@@ -15,6 +16,7 @@ import org.apache.tika.Tika;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.metadata.TikaCoreProperties;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -42,15 +44,18 @@ public class DocumentIngestionListener {
     private final DocumentChunkMapper chunkMapper;
     private final IngestionTaskMapper taskMapper;
     private final ObjectStorageService storageService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DocumentIngestionListener(KnowledgeDocumentMapper documentMapper,
                                      DocumentChunkMapper chunkMapper,
                                      IngestionTaskMapper taskMapper,
-                                     ObjectStorageService storageService) {
+                                     ObjectStorageService storageService,
+                                     ApplicationEventPublisher eventPublisher) {
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
         this.taskMapper = taskMapper;
         this.storageService = storageService;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -112,8 +117,9 @@ public class DocumentIngestionListener {
 
             document.setChunkCount(childCount);
             document.setEmbeddingStatus("PENDING");
-            updateDocument(document, "READY", "COMPLETED", 70, null, null);
-            updateTask(task, "WAITING_VECTOR", 70, "EMBEDDING_PENDING", null, true);
+            updateDocument(document, "PROCESSING", "COMPLETED", 70, null, null);
+            updateTask(task, "WAITING_VECTOR", 70, "EMBEDDING_PENDING", null, false);
+            eventPublisher.publishEvent(new DocumentVectorizationEvent(document.getId(), task.getId()));
             log.info("文档解析与分块完成: tenantId={}, documentId={}, taskId={}, parentChunks={}, childChunks={}, elapsedMs={}",
                     document.getTenantId(), document.getId(), task.getId(), parents.size(), childCount,
                     elapsedMillis(startedAt));
