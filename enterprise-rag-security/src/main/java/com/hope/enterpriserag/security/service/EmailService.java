@@ -1,6 +1,7 @@
 package com.hope.enterpriserag.security.service;
 
 import com.hope.enterpriserag.common.exception.BusinessException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -19,6 +20,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class EmailService {
 
     private final JavaMailSender mailSender;
@@ -26,11 +28,6 @@ public class EmailService {
 
     @Value("${spring.mail.username}")
     private String from;
-
-    public EmailService(JavaMailSender mailSender, StringRedisTemplate redisTemplate) {
-        this.mailSender = mailSender;
-        this.redisTemplate = redisTemplate;
-    }
 
     /**
      * 向指定邮箱发送 6 位数字验证码。

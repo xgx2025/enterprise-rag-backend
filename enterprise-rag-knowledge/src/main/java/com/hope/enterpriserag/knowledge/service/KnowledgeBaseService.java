@@ -9,6 +9,7 @@ import com.hope.enterpriserag.knowledge.entity.KnowledgeBase;
 import com.hope.enterpriserag.knowledge.entity.KnowledgeDocument;
 import com.hope.enterpriserag.knowledge.mapper.KnowledgeBaseMapper;
 import com.hope.enterpriserag.knowledge.mapper.KnowledgeDocumentMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,15 +22,10 @@ import java.util.List;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class KnowledgeBaseService {
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final KnowledgeDocumentMapper documentMapper;
-
-    public KnowledgeBaseService(KnowledgeBaseMapper knowledgeBaseMapper,
-                                KnowledgeDocumentMapper documentMapper) {
-        this.knowledgeBaseMapper = knowledgeBaseMapper;
-        this.documentMapper = documentMapper;
-    }
 
     /**
      * 查询租户知识库。

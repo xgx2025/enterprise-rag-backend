@@ -13,6 +13,7 @@ import com.hope.enterpriserag.knowledge.mapper.IngestionTaskMapper;
 import com.hope.enterpriserag.knowledge.mapper.KnowledgeDocumentMapper;
 import com.hope.enterpriserag.knowledge.vector.VectorRecord;
 import com.hope.enterpriserag.knowledge.vector.VectorStore;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Async;
@@ -31,6 +32,7 @@ import java.util.List;
 @Slf4j
 @Component
 @ConditionalOnProperty(prefix = "rag.vectorization", name = "enabled", havingValue = "true")
+@RequiredArgsConstructor
 public class DocumentVectorizationListener {
     private static final int VECTOR_START_PROGRESS = 70;
     private static final int VECTOR_PROGRESS_SPAN = 29;
@@ -41,21 +43,6 @@ public class DocumentVectorizationListener {
     private final EmbeddingService embeddingService;
     private final VectorStore vectorStore;
     private final VectorizationProperties properties;
-
-    public DocumentVectorizationListener(KnowledgeDocumentMapper documentMapper,
-                                         DocumentChunkMapper chunkMapper,
-                                         IngestionTaskMapper taskMapper,
-                                         EmbeddingService embeddingService,
-                                         VectorStore vectorStore,
-                                         VectorizationProperties properties) {
-        this.documentMapper = documentMapper;
-        this.chunkMapper = chunkMapper;
-        this.taskMapper = taskMapper;
-        this.embeddingService = embeddingService;
-        this.vectorStore = vectorStore;
-        this.properties = properties;
-    }
-
     /**
      * 在分块事务提交后批量生成向量并写入 Milvus。
      * 使用文档级先删后 Upsert 策略清理重新解析产生的旧分块，保证手工重试幂等。

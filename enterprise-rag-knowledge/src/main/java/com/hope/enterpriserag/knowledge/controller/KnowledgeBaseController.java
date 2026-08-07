@@ -8,6 +8,7 @@ import com.hope.enterpriserag.knowledge.dto.KnowledgeBaseStatusRequest;
 import com.hope.enterpriserag.knowledge.service.KnowledgeBaseService;
 import com.hope.enterpriserag.system.entity.User;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,12 +27,9 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/knowledge-bases")
+@RequiredArgsConstructor
 public class KnowledgeBaseController {
     private final KnowledgeBaseService knowledgeBaseService;
-
-    public KnowledgeBaseController(KnowledgeBaseService knowledgeBaseService) {
-        this.knowledgeBaseService = knowledgeBaseService;
-    }
 
     /** 查询当前租户的知识库，可按需包含已停用数据。 */
     @GetMapping

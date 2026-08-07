@@ -12,6 +12,7 @@ import io.milvus.v2.service.collection.request.DescribeCollectionReq;
 import io.milvus.v2.service.collection.request.HasCollectionReq;
 import io.milvus.v2.service.vector.request.DeleteReq;
 import io.milvus.v2.service.vector.request.UpsertReq;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDate;
@@ -24,6 +25,7 @@ import java.util.Map;
  * Collection 使用子块 ID 作为主键并建立租户、知识库、文档状态、安全等级和有效期过滤索引。
  */
 @Slf4j
+@RequiredArgsConstructor
 public class MilvusVectorStore implements VectorStore {
     private static final String CHUNK_ID = "chunk_id";
     private static final String VECTOR = "embedding";
@@ -40,11 +42,6 @@ public class MilvusVectorStore implements VectorStore {
     private final Gson gson = new Gson();
     private volatile boolean collectionReady;
     private volatile int configuredDimensions;
-
-    public MilvusVectorStore(MilvusClientV2 client, MilvusProperties properties) {
-        this.client = client;
-        this.properties = properties;
-    }
 
     @Override
     public void ensureReady(int dimensions) {

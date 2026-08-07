@@ -11,6 +11,7 @@ import com.hope.enterpriserag.knowledge.mapper.DocumentChunkMapper;
 import com.hope.enterpriserag.knowledge.mapper.IngestionTaskMapper;
 import com.hope.enterpriserag.knowledge.mapper.KnowledgeDocumentMapper;
 import com.hope.enterpriserag.knowledge.storage.ObjectStorageService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.apache.tika.metadata.Metadata;
@@ -33,6 +34,7 @@ import java.util.List;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class DocumentIngestionListener {
     private static final int MAX_EXTRACTED_CHARACTERS = 5_000_000;
     private static final int PARENT_CHUNK_SIZE = 3_000;
@@ -45,18 +47,6 @@ public class DocumentIngestionListener {
     private final IngestionTaskMapper taskMapper;
     private final ObjectStorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
-
-    public DocumentIngestionListener(KnowledgeDocumentMapper documentMapper,
-                                     DocumentChunkMapper chunkMapper,
-                                     IngestionTaskMapper taskMapper,
-                                     ObjectStorageService storageService,
-                                     ApplicationEventPublisher eventPublisher) {
-        this.documentMapper = documentMapper;
-        this.chunkMapper = chunkMapper;
-        this.taskMapper = taskMapper;
-        this.storageService = storageService;
-        this.eventPublisher = eventPublisher;
-    }
 
     /**
      * 处理已提交的文档上传事件，并持续更新文档与任务状态。

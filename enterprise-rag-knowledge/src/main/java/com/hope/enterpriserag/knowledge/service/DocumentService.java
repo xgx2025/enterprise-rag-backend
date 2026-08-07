@@ -20,6 +20,7 @@ import com.hope.enterpriserag.knowledge.mapper.DocumentChunkMapper;
 import com.hope.enterpriserag.knowledge.mapper.IngestionTaskMapper;
 import com.hope.enterpriserag.knowledge.mapper.KnowledgeDocumentMapper;
 import com.hope.enterpriserag.knowledge.storage.ObjectStorageService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class DocumentService {
     private static final long MAX_FILE_SIZE = 50L * 1024 * 1024;
     private static final Set<String> SUPPORTED_EXTENSIONS = Set.of("pdf", "docx", "md", "txt", "html", "htm");
@@ -54,20 +56,6 @@ public class DocumentService {
     private final KnowledgeBaseService knowledgeBaseService;
     private final ObjectStorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
-
-    public DocumentService(KnowledgeDocumentMapper documentMapper,
-                           DocumentChunkMapper chunkMapper,
-                           IngestionTaskMapper taskMapper,
-                           KnowledgeBaseService knowledgeBaseService,
-                           ObjectStorageService storageService,
-                           ApplicationEventPublisher eventPublisher) {
-        this.documentMapper = documentMapper;
-        this.chunkMapper = chunkMapper;
-        this.taskMapper = taskMapper;
-        this.knowledgeBaseService = knowledgeBaseService;
-        this.storageService = storageService;
-        this.eventPublisher = eventPublisher;
-    }
 
     /** 按治理属性和关键词分页查询当前租户的未归档文档。 */
     public PaginatedResult<DocumentResponse> list(Long tenantId, String status, String department,

@@ -9,6 +9,7 @@ import com.hope.enterpriserag.knowledge.mapper.DocumentChunkMapper;
 import com.hope.enterpriserag.knowledge.mapper.KnowledgeDocumentMapper;
 import com.hope.enterpriserag.knowledge.vector.VectorMetadata;
 import com.hope.enterpriserag.knowledge.vector.VectorStore;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Async;
@@ -24,21 +25,12 @@ import java.util.List;
 @Slf4j
 @Component
 @ConditionalOnProperty(prefix = "rag.vectorization", name = "enabled", havingValue = "true")
+@RequiredArgsConstructor
 public class DocumentVectorMetadataListener {
     private final KnowledgeDocumentMapper documentMapper;
     private final DocumentChunkMapper chunkMapper;
     private final EmbeddingService embeddingService;
     private final VectorStore vectorStore;
-
-    public DocumentVectorMetadataListener(KnowledgeDocumentMapper documentMapper,
-                                          DocumentChunkMapper chunkMapper,
-                                          EmbeddingService embeddingService,
-                                          VectorStore vectorStore) {
-        this.documentMapper = documentMapper;
-        this.chunkMapper = chunkMapper;
-        this.embeddingService = embeddingService;
-        this.vectorStore = vectorStore;
-    }
 
     /** 在数据库状态提交后更新或删除对应文档的 Milvus 记录。 */
     @Async

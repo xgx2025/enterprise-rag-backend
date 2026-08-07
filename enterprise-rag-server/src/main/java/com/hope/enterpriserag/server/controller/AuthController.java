@@ -12,6 +12,7 @@ import com.hope.enterpriserag.security.service.AuthService;
 import com.hope.enterpriserag.security.service.EmailService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
@@ -29,6 +30,7 @@ import java.time.Duration;
 @Slf4j
 @RestController
 @RequestMapping("/auth")
+@RequiredArgsConstructor
 public class AuthController {
 
     private static final String REFRESH_TOKEN_COOKIE = "refresh_token";
@@ -36,11 +38,6 @@ public class AuthController {
 
     private final AuthService authService;
     private final EmailService emailService;
-
-    public AuthController(AuthService authService, EmailService emailService) {
-        this.authService = authService;
-        this.emailService = emailService;
-    }
 
     /** 用户名 + 密码登录 */
     @PostMapping("/login")

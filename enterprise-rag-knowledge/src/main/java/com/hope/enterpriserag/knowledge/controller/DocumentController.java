@@ -11,6 +11,7 @@ import com.hope.enterpriserag.knowledge.dto.PaginatedResult;
 import com.hope.enterpriserag.knowledge.service.DocumentService;
 import com.hope.enterpriserag.system.entity.User;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -32,12 +33,9 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/documents")
+@RequiredArgsConstructor
 public class DocumentController {
     private final DocumentService documentService;
-
-    public DocumentController(DocumentService documentService) {
-        this.documentService = documentService;
-    }
 
     /** 按状态、部门、知识库和关键词分页查询当前租户文档。 */
     @GetMapping

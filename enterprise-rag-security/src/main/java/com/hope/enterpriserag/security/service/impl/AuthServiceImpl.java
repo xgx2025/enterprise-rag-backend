@@ -15,6 +15,7 @@ import com.hope.enterpriserag.system.service.UserService;
 import com.hope.enterpriserag.security.util.JwtUtil;
 import io.jsonwebtoken.Claims;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -35,6 +36,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
     private final UserService userService;
@@ -43,20 +45,6 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final SysTenantMapper tenantMapper;
-
-    public AuthServiceImpl(UserService userService,
-                           JwtUtil jwtUtil,
-                           StringRedisTemplate redisTemplate,
-                           PasswordEncoder passwordEncoder,
-                           EmailService emailService,
-                           SysTenantMapper tenantMapper) {
-        this.userService = userService;
-        this.jwtUtil = jwtUtil;
-        this.redisTemplate = redisTemplate;
-        this.passwordEncoder = passwordEncoder;
-        this.emailService = emailService;
-        this.tenantMapper = tenantMapper;
-    }
 
     @Override
     public LoginResponse login(LoginRequest request) {

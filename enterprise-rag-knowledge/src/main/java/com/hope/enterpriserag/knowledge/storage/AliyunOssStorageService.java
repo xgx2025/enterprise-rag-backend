@@ -6,6 +6,7 @@ import com.aliyun.oss.model.GeneratePresignedUrlRequest;
 import com.aliyun.oss.model.ObjectMetadata;
 import com.hope.enterpriserag.common.exception.BusinessException;
 import com.hope.enterpriserag.knowledge.config.OssProperties;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -21,14 +22,10 @@ import java.util.Date;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class AliyunOssStorageService implements ObjectStorageService {
     private final OssProperties properties;
     private final ObjectProvider<OSS> ossClientProvider;
-
-    public AliyunOssStorageService(OssProperties properties, ObjectProvider<OSS> ossClientProvider) {
-        this.properties = properties;
-        this.ossClientProvider = ossClientProvider;
-    }
 
     @Override
     public void upload(String objectKey, InputStream inputStream, long contentLength, String contentType) {
