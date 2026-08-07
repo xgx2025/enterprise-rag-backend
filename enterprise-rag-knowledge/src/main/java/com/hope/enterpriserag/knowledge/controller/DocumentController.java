@@ -5,17 +5,17 @@ import com.hope.enterpriserag.common.exception.BusinessException;
 import com.hope.enterpriserag.knowledge.dto.DocumentChunkResponse;
 import com.hope.enterpriserag.knowledge.dto.DocumentResponse;
 import com.hope.enterpriserag.knowledge.dto.DocumentStatusRequest;
-import com.hope.enterpriserag.knowledge.dto.DocumentUploadCommand;
+import com.hope.enterpriserag.knowledge.dto.DocumentUploadRequest;
 import com.hope.enterpriserag.knowledge.dto.ObjectAccessResponse;
 import com.hope.enterpriserag.knowledge.dto.PaginatedResult;
 import com.hope.enterpriserag.knowledge.service.DocumentService;
 import com.hope.enterpriserag.system.entity.User;
 import jakarta.validation.Valid;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -23,9 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -65,22 +63,9 @@ public class DocumentController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Result<DocumentResponse> upload(
             @AuthenticationPrincipal User user,
-            @RequestParam("file") MultipartFile file,
-            @RequestParam String title,
-            @RequestParam String knowledgeBaseId,
-            @RequestParam String department,
-            @RequestParam(defaultValue = "1") Integer securityLevel,
-            @RequestParam(defaultValue = "V1.0") String version,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate effectiveFrom,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate effectiveTo,
-            @RequestParam(required = false) List<String> allowedRoles,
-            @RequestParam(defaultValue = "1") Integer authorityLevel,
-            @RequestParam(required = false) String replacesDocumentId) {
-        DocumentUploadCommand command = new DocumentUploadCommand(
-                title, parseId(knowledgeBaseId), department, securityLevel, version,
-                effectiveFrom, effectiveTo, allowedRoles == null ? List.of() : allowedRoles,
-                authorityLevel, parseOptionalId(replacesDocumentId));
-        return Result.ok(documentService.upload(user.getTenantId(), user.getId(), file, command));
+            @Valid @ModelAttribute DocumentUploadRequest request) {
+        return Result.ok(documentService.upload(
+                user.getTenantId(), user.getId(), request.file(), request.toCommand()));
     }
 
     /** 发布文档或将已发布文档设为失效。 */
