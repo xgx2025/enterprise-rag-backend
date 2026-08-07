@@ -1,5 +1,6 @@
-package com.hope.enterpriserag.knowledge.dto;
+package com.hope.enterpriserag.server.dto.knowledge;
 
+import com.hope.enterpriserag.knowledge.command.DocumentUploadCommand;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;

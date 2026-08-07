@@ -1,4 +1,4 @@
-package com.hope.enterpriserag.knowledge.dto;
+package com.hope.enterpriserag.knowledge.command;
 
 import java.time.LocalDate;
 import java.util.List;

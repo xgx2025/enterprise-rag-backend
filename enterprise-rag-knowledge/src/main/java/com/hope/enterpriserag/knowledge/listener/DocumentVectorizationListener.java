@@ -1,4 +1,4 @@
-package com.hope.enterpriserag.knowledge.service;
+package com.hope.enterpriserag.knowledge.listener;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;

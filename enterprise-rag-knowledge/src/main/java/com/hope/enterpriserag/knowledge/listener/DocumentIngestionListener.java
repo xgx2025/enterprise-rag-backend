@@ -1,4 +1,4 @@
-package com.hope.enterpriserag.knowledge.service;
+package com.hope.enterpriserag.knowledge.listener;
 
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;

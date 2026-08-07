@@ -4,12 +4,13 @@ import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.hope.enterpriserag.common.PaginatedResult;
 import com.hope.enterpriserag.common.exception.BusinessException;
+import com.hope.enterpriserag.knowledge.command.DocumentUploadCommand;
+import com.hope.enterpriserag.knowledge.command.DocumentUploadFile;
 import com.hope.enterpriserag.knowledge.dto.DocumentChunkResponse;
 import com.hope.enterpriserag.knowledge.dto.DocumentResponse;
-import com.hope.enterpriserag.knowledge.dto.DocumentUploadCommand;
 import com.hope.enterpriserag.knowledge.dto.ObjectAccessResponse;
-import com.hope.enterpriserag.knowledge.dto.PaginatedResult;
 import com.hope.enterpriserag.knowledge.entity.DocumentChunk;
 import com.hope.enterpriserag.knowledge.entity.IngestionTask;
 import com.hope.enterpriserag.knowledge.entity.KnowledgeDocument;
@@ -26,7 +27,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -96,12 +96,13 @@ public class DocumentService {
      * 数据库写入失败时会尽力清理已上传的 OSS 对象。
      */
     @Transactional
-    public DocumentResponse upload(Long tenantId, Long userId, MultipartFile file, DocumentUploadCommand command) {
+    public DocumentResponse upload(Long tenantId, Long userId, DocumentUploadFile file,
+                                   DocumentUploadCommand command) {
         validateUpload(file, command);
         knowledgeBaseService.requireActive(tenantId, command.knowledgeBaseId());
         validateReplacement(tenantId, command);
 
-        String originalName = normalizeOriginalName(file.getOriginalFilename());
+        String originalName = normalizeOriginalName(file.originalFilename());
         String extension = extensionOf(originalName);
         String contentHash = sha256(file);
         long duplicateCount = documentMapper.selectCount(new LambdaQueryWrapper<KnowledgeDocument>()
@@ -115,9 +116,9 @@ public class DocumentService {
         Long documentId = IdUtil.getSnowflakeNextId();
         String objectKey = buildObjectKey(tenantId, command.knowledgeBaseId(), documentId, originalName);
         log.info("开始上传文档: tenantId={}, userId={}, knowledgeBaseId={}, documentId={}, fileType={}, fileSize={}",
-                tenantId, userId, command.knowledgeBaseId(), documentId, extension, file.getSize());
-        try (InputStream inputStream = file.getInputStream()) {
-            storageService.upload(objectKey, inputStream, file.getSize(), file.getContentType());
+                tenantId, userId, command.knowledgeBaseId(), documentId, extension, file.size());
+        try (InputStream inputStream = file.openStream()) {
+            storageService.upload(objectKey, inputStream, file.size(), file.contentType());
         } catch (IOException e) {
             log.error("读取待上传文件失败: tenantId={}, documentId={}", tenantId, documentId, e);
             throw new BusinessException("读取上传文件失败");
@@ -132,8 +133,8 @@ public class DocumentService {
             document.setTitle(command.title().trim());
             document.setFileName(originalName);
             document.setFileType(extension.toUpperCase(Locale.ROOT));
-            document.setFileSize(file.getSize());
-            document.setContentType(file.getContentType());
+            document.setFileSize(file.size());
+            document.setContentType(file.contentType());
             document.setStorageProvider("ALIYUN_OSS");
             document.setBucketName(storageService.bucketName());
             document.setObjectKey(objectKey);
@@ -353,14 +354,14 @@ public class DocumentService {
         return task;
     }
 
-    private void validateUpload(MultipartFile file, DocumentUploadCommand command) {
-        if (file == null || file.isEmpty()) {
+    private void validateUpload(DocumentUploadFile file, DocumentUploadCommand command) {
+        if (file == null || file.empty()) {
             throw new BusinessException("请选择要上传的文件");
         }
-        if (file.getSize() > MAX_FILE_SIZE) {
+        if (file.size() > MAX_FILE_SIZE) {
             throw new BusinessException("文件大小不能超过 50MB");
         }
-        String extension = extensionOf(normalizeOriginalName(file.getOriginalFilename()));
+        String extension = extensionOf(normalizeOriginalName(file.originalFilename()));
         if (!SUPPORTED_EXTENSIONS.contains(extension)) {
             throw new BusinessException("仅支持 PDF、DOCX、Markdown、TXT 和 HTML 文件");
         }
@@ -398,8 +399,8 @@ public class DocumentService {
         }
     }
 
-    private String sha256(MultipartFile file) {
-        try (InputStream inputStream = file.getInputStream()) {
+    private String sha256(DocumentUploadFile file) {
+        try (InputStream inputStream = file.openStream()) {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] buffer = new byte[8192];
             int read;

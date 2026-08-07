@@ -1,5 +1,6 @@
-package com.hope.enterpriserag.knowledge.dto;
+package com.hope.enterpriserag.server.dto.knowledge;
 
+import com.hope.enterpriserag.knowledge.command.KnowledgeBaseCommand;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -19,4 +20,8 @@ public record KnowledgeBaseRequest(
         @Size(max = 64) String department,
         @Min(1) @Max(3) Integer securityLevel
 ) {
+    /** 将 Web 请求转换为知识库应用命令。 */
+    public KnowledgeBaseCommand toCommand() {
+        return new KnowledgeBaseCommand(name, description, department, securityLevel);
+    }
 }

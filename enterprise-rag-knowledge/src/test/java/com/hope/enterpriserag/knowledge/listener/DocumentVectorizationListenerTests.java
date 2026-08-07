@@ -1,4 +1,4 @@
-package com.hope.enterpriserag.knowledge.service;
+package com.hope.enterpriserag.knowledge.listener;
 
 import com.hope.enterpriserag.knowledge.config.VectorizationProperties;
 import com.hope.enterpriserag.knowledge.embedding.EmbeddingException;

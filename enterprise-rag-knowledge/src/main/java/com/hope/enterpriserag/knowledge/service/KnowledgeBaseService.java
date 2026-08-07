@@ -3,7 +3,7 @@ package com.hope.enterpriserag.knowledge.service;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hope.enterpriserag.common.exception.BusinessException;
-import com.hope.enterpriserag.knowledge.dto.KnowledgeBaseRequest;
+import com.hope.enterpriserag.knowledge.command.KnowledgeBaseCommand;
 import com.hope.enterpriserag.knowledge.dto.KnowledgeBaseResponse;
 import com.hope.enterpriserag.knowledge.entity.KnowledgeBase;
 import com.hope.enterpriserag.knowledge.entity.KnowledgeDocument;
@@ -46,16 +46,16 @@ public class KnowledgeBaseService {
 
     /** 创建租户内名称唯一的知识库。 */
     @Transactional
-    public KnowledgeBaseResponse create(Long tenantId, Long userId, KnowledgeBaseRequest request) {
-        ensureUniqueName(tenantId, request.name().trim(), null);
+    public KnowledgeBaseResponse create(Long tenantId, Long userId, KnowledgeBaseCommand command) {
+        ensureUniqueName(tenantId, command.name().trim(), null);
         LocalDateTime now = LocalDateTime.now();
         KnowledgeBase knowledgeBase = new KnowledgeBase();
         knowledgeBase.setId(IdUtil.getSnowflakeNextId());
         knowledgeBase.setTenantId(tenantId);
-        knowledgeBase.setName(request.name().trim());
-        knowledgeBase.setDescription(trimToNull(request.description()));
-        knowledgeBase.setDepartment(trimToNull(request.department()));
-        knowledgeBase.setSecurityLevel(request.securityLevel() == null ? 1 : request.securityLevel());
+        knowledgeBase.setName(command.name().trim());
+        knowledgeBase.setDescription(trimToNull(command.description()));
+        knowledgeBase.setDepartment(trimToNull(command.department()));
+        knowledgeBase.setSecurityLevel(command.securityLevel() == null ? 1 : command.securityLevel());
         knowledgeBase.setStatus("ACTIVE");
         knowledgeBase.setCreatedBy(userId);
         knowledgeBase.setCreatedAt(now);
@@ -68,13 +68,13 @@ public class KnowledgeBaseService {
 
     /** 更新属于当前租户的知识库基础信息。 */
     @Transactional
-    public KnowledgeBaseResponse update(Long tenantId, Long id, KnowledgeBaseRequest request) {
+    public KnowledgeBaseResponse update(Long tenantId, Long id, KnowledgeBaseCommand command) {
         KnowledgeBase knowledgeBase = requireOwned(tenantId, id);
-        ensureUniqueName(tenantId, request.name().trim(), id);
-        knowledgeBase.setName(request.name().trim());
-        knowledgeBase.setDescription(trimToNull(request.description()));
-        knowledgeBase.setDepartment(trimToNull(request.department()));
-        knowledgeBase.setSecurityLevel(request.securityLevel() == null ? 1 : request.securityLevel());
+        ensureUniqueName(tenantId, command.name().trim(), id);
+        knowledgeBase.setName(command.name().trim());
+        knowledgeBase.setDescription(trimToNull(command.description()));
+        knowledgeBase.setDepartment(trimToNull(command.department()));
+        knowledgeBase.setSecurityLevel(command.securityLevel() == null ? 1 : command.securityLevel());
         knowledgeBase.setUpdatedAt(LocalDateTime.now());
         knowledgeBaseMapper.updateById(knowledgeBase);
         log.info("知识库更新成功: tenantId={}, knowledgeBaseId={}, securityLevel={}",

@@ -1,11 +1,11 @@
-package com.hope.enterpriserag.knowledge.controller;
+package com.hope.enterpriserag.server.controller.knowledge;
 
 import com.hope.enterpriserag.common.Result;
 import com.hope.enterpriserag.common.exception.BusinessException;
-import com.hope.enterpriserag.knowledge.dto.KnowledgeBaseRequest;
 import com.hope.enterpriserag.knowledge.dto.KnowledgeBaseResponse;
-import com.hope.enterpriserag.knowledge.dto.KnowledgeBaseStatusRequest;
 import com.hope.enterpriserag.knowledge.service.KnowledgeBaseService;
+import com.hope.enterpriserag.server.dto.knowledge.KnowledgeBaseRequest;
+import com.hope.enterpriserag.server.dto.knowledge.KnowledgeBaseStatusRequest;
 import com.hope.enterpriserag.system.entity.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -43,7 +43,7 @@ public class KnowledgeBaseController {
     @PostMapping
     public Result<KnowledgeBaseResponse> create(@AuthenticationPrincipal User user,
                                                 @Valid @RequestBody KnowledgeBaseRequest request) {
-        return Result.ok(knowledgeBaseService.create(user.getTenantId(), user.getId(), request));
+        return Result.ok(knowledgeBaseService.create(user.getTenantId(), user.getId(), request.toCommand()));
     }
 
     /** 更新指定知识库的基础信息和默认安全等级。 */
@@ -51,7 +51,7 @@ public class KnowledgeBaseController {
     public Result<KnowledgeBaseResponse> update(@AuthenticationPrincipal User user,
                                                 @PathVariable String id,
                                                 @Valid @RequestBody KnowledgeBaseRequest request) {
-        return Result.ok(knowledgeBaseService.update(user.getTenantId(), parseId(id), request));
+        return Result.ok(knowledgeBaseService.update(user.getTenantId(), parseId(id), request.toCommand()));
     }
 
     /** 启用或停用知识库；存在生效文档时禁止停用。 */

@@ -1,4 +1,4 @@
-package com.hope.enterpriserag.knowledge.dto;
+package com.hope.enterpriserag.common;
 
 import java.util.List;
 

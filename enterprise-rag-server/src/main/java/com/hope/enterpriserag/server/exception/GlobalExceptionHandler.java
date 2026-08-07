@@ -1,8 +1,8 @@
 package com.hope.enterpriserag.server.exception;
 
 import com.hope.enterpriserag.common.Result;
-import com.hope.enterpriserag.common.exception.AuthException;
 import com.hope.enterpriserag.common.exception.BusinessException;
+import com.hope.enterpriserag.security.exception.AuthException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

@@ -1,14 +1,15 @@
-package com.hope.enterpriserag.knowledge.controller;
+package com.hope.enterpriserag.server.controller.knowledge;
 
+import com.hope.enterpriserag.common.PaginatedResult;
 import com.hope.enterpriserag.common.Result;
 import com.hope.enterpriserag.common.exception.BusinessException;
 import com.hope.enterpriserag.knowledge.dto.DocumentChunkResponse;
 import com.hope.enterpriserag.knowledge.dto.DocumentResponse;
-import com.hope.enterpriserag.knowledge.dto.DocumentStatusRequest;
-import com.hope.enterpriserag.knowledge.dto.DocumentUploadRequest;
 import com.hope.enterpriserag.knowledge.dto.ObjectAccessResponse;
-import com.hope.enterpriserag.knowledge.dto.PaginatedResult;
 import com.hope.enterpriserag.knowledge.service.DocumentService;
+import com.hope.enterpriserag.server.adapter.knowledge.MultipartDocumentUploadFile;
+import com.hope.enterpriserag.server.dto.knowledge.DocumentStatusRequest;
+import com.hope.enterpriserag.server.dto.knowledge.DocumentUploadRequest;
 import com.hope.enterpriserag.system.entity.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -63,7 +64,8 @@ public class DocumentController {
             @AuthenticationPrincipal User user,
             @Valid @ModelAttribute DocumentUploadRequest request) {
         return Result.ok(documentService.upload(
-                user.getTenantId(), user.getId(), request.file(), request.toCommand()));
+                user.getTenantId(), user.getId(),
+                new MultipartDocumentUploadFile(request.file()), request.toCommand()));
     }
 
     /** 发布文档或将已发布文档设为失效。 */

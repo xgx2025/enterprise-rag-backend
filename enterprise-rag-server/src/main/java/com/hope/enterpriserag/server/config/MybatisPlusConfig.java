@@ -1,4 +1,4 @@
-package com.hope.enterpriserag.knowledge.config;
+package com.hope.enterpriserag.server.config;
 
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 知识模块的 MyBatis-Plus 基础配置，负责注册数据库分页等通用插件。
+ * 应用级 MyBatis-Plus 配置，统一为各持久化模块注册数据库分页插件。
  */
 @Configuration
 public class MybatisPlusConfig {

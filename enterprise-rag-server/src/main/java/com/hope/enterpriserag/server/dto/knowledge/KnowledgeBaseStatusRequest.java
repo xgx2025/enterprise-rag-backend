@@ -1,4 +1,4 @@
-package com.hope.enterpriserag.knowledge.dto;
+package com.hope.enterpriserag.server.dto.knowledge;
 
 import jakarta.validation.constraints.Pattern;
 
