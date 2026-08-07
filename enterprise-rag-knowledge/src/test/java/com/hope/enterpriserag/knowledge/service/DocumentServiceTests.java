@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -90,6 +91,7 @@ class DocumentServiceTests {
         document.setParseStatus("COMPLETED");
         document.setEmbeddingStatus("FAILED");
         document.setFailureStage("EMBEDDING");
+        document.setFailureMessage("Embedding 服务返回 HTTP 404");
         when(documentMapper.selectOne(any())).thenReturn(document);
         when(taskMapper.selectCount(any())).thenReturn(1L);
         when(chunkMapper.selectCount(any())).thenReturn(2L);
@@ -101,6 +103,8 @@ class DocumentServiceTests {
         assertEquals("COMPLETED", document.getParseStatus());
         assertEquals("PENDING", document.getEmbeddingStatus());
         assertEquals(70, document.getProcessProgress());
+        assertNull(document.getFailureStage());
+        assertNull(document.getFailureMessage());
         ArgumentCaptor<DocumentVectorizationEvent> eventCaptor =
                 ArgumentCaptor.forClass(DocumentVectorizationEvent.class);
         verify(eventPublisher).publishEvent(eventCaptor.capture());

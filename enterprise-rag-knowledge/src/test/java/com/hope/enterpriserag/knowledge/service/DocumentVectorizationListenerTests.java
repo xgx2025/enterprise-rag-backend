@@ -18,6 +18,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -57,6 +58,8 @@ class DocumentVectorizationListenerTests {
 
     @Test
     void vectorizesChildChunksInBatchesAndCompletesTask() {
+        document.setFailureStage("EMBEDDING");
+        document.setFailureMessage("历史错误");
         when(chunkMapper.selectList(any())).thenReturn(List.of(chunk(1L), chunk(2L), chunk(3L)));
         when(embeddingService.embed(any())).thenAnswer(invocation -> {
             List<String> texts = invocation.getArgument(0);
@@ -71,6 +74,8 @@ class DocumentVectorizationListenerTests {
         assertEquals("READY", document.getStatus());
         assertEquals("COMPLETED", document.getEmbeddingStatus());
         assertEquals(100, document.getProcessProgress());
+        assertNull(document.getFailureStage());
+        assertNull(document.getFailureMessage());
         assertEquals("SUCCEEDED", task.getStatus());
         assertEquals("COMPLETED", task.getCurrentStage());
         assertEquals(100, task.getProgress());

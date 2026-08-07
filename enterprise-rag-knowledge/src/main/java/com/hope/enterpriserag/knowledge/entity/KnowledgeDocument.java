@@ -1,6 +1,8 @@
 package com.hope.enterpriserag.knowledge.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -57,8 +59,11 @@ public class KnowledgeDocument {
     private String embeddingStatus;
     /** 摄取处理进度百分比，范围为 0 至 100。 */
     private Integer processProgress;
+    /** 最近失败阶段；重试开始或处理成功时必须写入 {@code null} 清除旧值。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String failureStage;
-    /** 脱敏并截断后的最近失败原因。 */
+    /** 脱敏并截断后的最近失败原因；仅文档处于失败状态时有效。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String failureMessage;
     /** 可用于检索的子块数量。 */
     private Integer chunkCount;

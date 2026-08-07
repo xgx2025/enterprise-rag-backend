@@ -132,3 +132,10 @@ CREATE TABLE IF NOT EXISTS kb_ingestion_task (
     KEY idx_task_document (document_id, created_at),
     KEY idx_task_tenant_status (tenant_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文档入库任务';
+
+-- 失败信息只属于当前失败态，清理早期版本因 null 更新策略遗留的历史错误提示。
+UPDATE kb_document
+SET failure_stage = NULL,
+    failure_message = NULL
+WHERE status <> 'FAILED'
+  AND (failure_stage IS NOT NULL OR failure_message IS NOT NULL);
