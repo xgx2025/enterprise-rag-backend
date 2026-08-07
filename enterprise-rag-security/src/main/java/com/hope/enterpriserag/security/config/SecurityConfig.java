@@ -1,5 +1,6 @@
 package com.hope.enterpriserag.security.config;
 
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,6 +20,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  *   <li>禁用 CSRF（无状态 JWT 不需要）</li>
  *   <li>无状态会话管理</li>
  *   <li>认证接口放行，其余接口需要认证</li>
+ *   <li>未认证或 Access Token 无效时返回 401，权限不足时返回 403</li>
  *   <li>JWT 过滤器插入 UsernamePasswordAuthenticationFilter 之前</li>
  * </ul>
  */
@@ -36,6 +38,9 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint((request, response, exception) ->
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED)))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.POST,
                     "/auth/login", "/auth/register", "/auth/send-code",
