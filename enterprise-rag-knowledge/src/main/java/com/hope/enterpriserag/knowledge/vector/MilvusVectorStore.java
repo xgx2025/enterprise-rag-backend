@@ -6,12 +6,16 @@ import com.hope.enterpriserag.knowledge.config.MilvusProperties;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.common.DataType;
 import io.milvus.v2.common.IndexParam;
+import io.milvus.v2.common.ConsistencyLevel;
 import io.milvus.v2.service.collection.request.AddFieldReq;
 import io.milvus.v2.service.collection.request.CreateCollectionReq;
 import io.milvus.v2.service.collection.request.DescribeCollectionReq;
 import io.milvus.v2.service.collection.request.HasCollectionReq;
+import io.milvus.v2.service.collection.request.LoadCollectionReq;
 import io.milvus.v2.service.vector.request.DeleteReq;
+import io.milvus.v2.service.vector.request.SearchReq;
 import io.milvus.v2.service.vector.request.UpsertReq;
+import io.milvus.v2.service.vector.request.data.FloatVec;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -67,6 +71,10 @@ public class MilvusVectorStore implements VectorStore {
                 log.info("复用已有 Milvus Collection: database={}, collection={}",
                         properties.getDatabaseName(), properties.getCollectionName());
             }
+            client.loadCollection(LoadCollectionReq.builder()
+                    .databaseName(properties.getDatabaseName())
+                    .collectionName(properties.getCollectionName())
+                    .build());
             configuredDimensions = dimensions;
             collectionReady = true;
         }
@@ -117,6 +125,49 @@ public class MilvusVectorStore implements VectorStore {
                 .data(rows)
                 .partialUpdate(true)
                 .build());
+    }
+
+    @Override
+    public List<VectorSearchHit> search(VectorSearchRequest request) {
+        validateSearchRequest(request);
+        requireReady();
+        long effectiveEpochDay = request.effectiveDate().toEpochDay();
+        String filter = TENANT_ID + " == {tenantId}"
+                + " && " + KNOWLEDGE_BASE_ID + " in {knowledgeBaseIds}"
+                + " && " + DOCUMENT_STATUS + " == {documentStatus}"
+                + " && " + SECURITY_LEVEL + " <= {maximumSecurityLevel}"
+                + " && (" + EFFECTIVE_FROM + " == 0 || " + EFFECTIVE_FROM + " <= {effectiveDate})"
+                + " && (" + EFFECTIVE_TO + " == 0 || " + EFFECTIVE_TO + " >= {effectiveDate})";
+        Map<String, Object> filterValues = Map.of(
+                "tenantId", request.tenantId(),
+                "knowledgeBaseIds", request.knowledgeBaseIds(),
+                "documentStatus", "ACTIVE",
+                "maximumSecurityLevel", request.maximumSecurityLevel(),
+                "effectiveDate", effectiveEpochDay);
+
+        var response = client.search(SearchReq.builder()
+                .databaseName(properties.getDatabaseName())
+                .collectionName(properties.getCollectionName())
+                .annsField(VECTOR)
+                .metricType(IndexParam.MetricType.COSINE)
+                .consistencyLevel(ConsistencyLevel.STRONG)
+                .topK(request.topK())
+                .filter(filter)
+                .filterTemplateValues(filterValues)
+                .outputFields(List.of(DOCUMENT_ID, "parent_chunk_id", "chunk_index"))
+                .data(List.of(new FloatVec(request.embedding())))
+                .build());
+        if (response == null || response.getSearchResults() == null || response.getSearchResults().isEmpty()) {
+            return List.of();
+        }
+        return response.getSearchResults().getFirst().stream()
+                .map(result -> new VectorSearchHit(
+                        number(result.getId(), CHUNK_ID).longValue(),
+                        number(result.getEntity().get(DOCUMENT_ID), DOCUMENT_ID).longValue(),
+                        number(result.getEntity().get("parent_chunk_id"), "parent_chunk_id").longValue(),
+                        number(result.getEntity().get("chunk_index"), "chunk_index").intValue(),
+                        result.getScore() == null ? 0.0 : result.getScore().doubleValue()))
+                .toList();
     }
 
     private void createCollection(int dimensions) {
@@ -182,7 +233,7 @@ public class MilvusVectorStore implements VectorStore {
                     + "，与配置维度 " + dimensions + " 不一致");
         }
         for (String fieldName : List.of(CHUNK_ID, TENANT_ID, KNOWLEDGE_BASE_ID, DOCUMENT_ID,
-                DOCUMENT_STATUS, SECURITY_LEVEL, EFFECTIVE_FROM, EFFECTIVE_TO)) {
+                "parent_chunk_id", "chunk_index", DOCUMENT_STATUS, SECURITY_LEVEL, EFFECTIVE_FROM, EFFECTIVE_TO)) {
             if (schema.getField(fieldName) == null) {
                 throw new IllegalStateException("已有 Milvus Collection 缺少字段: " + fieldName);
             }
@@ -237,6 +288,37 @@ public class MilvusVectorStore implements VectorStore {
         if (value(record.allowedRoles()).length() > 4096) {
             throw new IllegalArgumentException("文档访问角色元数据超过 Milvus 字段限制");
         }
+    }
+
+    private void validateSearchRequest(VectorSearchRequest request) {
+        if (request == null || request.tenantId() == null || request.effectiveDate() == null
+                || request.knowledgeBaseIds() == null || request.knowledgeBaseIds().isEmpty()
+                || request.embedding() == null) {
+            throw new IllegalArgumentException("Milvus 检索请求缺少必填字段");
+        }
+        if (request.topK() <= 0 || request.topK() > 200) {
+            throw new IllegalArgumentException("Milvus 检索 topK 必须在 1 到 200 之间");
+        }
+        if (request.maximumSecurityLevel() < 1 || request.maximumSecurityLevel() > 3) {
+            throw new IllegalArgumentException("Milvus 检索安全等级必须在 1 到 3 之间");
+        }
+        if (request.embedding().size() != configuredDimensions) {
+            throw new IllegalArgumentException("Milvus 查询向量维度与 Collection 配置不一致");
+        }
+    }
+
+    private Number number(Object value, String fieldName) {
+        if (value instanceof Number number) {
+            return number;
+        }
+        if (value instanceof String text) {
+            try {
+                return Long.parseLong(text);
+            } catch (NumberFormatException ignored) {
+                // 统一转换为下面的安全异常，不暴露 SDK 原始结果。
+            }
+        }
+        throw new IllegalStateException("Milvus 检索结果字段格式无效: " + fieldName);
     }
 
     private long epochDay(LocalDate date) {

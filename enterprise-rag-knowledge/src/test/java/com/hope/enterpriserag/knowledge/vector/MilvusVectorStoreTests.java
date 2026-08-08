@@ -6,16 +6,21 @@ import io.milvus.v2.common.DataType;
 import io.milvus.v2.service.collection.request.AddFieldReq;
 import io.milvus.v2.service.collection.request.CreateCollectionReq;
 import io.milvus.v2.service.collection.response.DescribeCollectionResp;
+import io.milvus.v2.service.vector.request.SearchReq;
 import io.milvus.v2.service.vector.request.UpsertReq;
+import io.milvus.v2.service.vector.response.SearchResp;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -62,6 +67,35 @@ class MilvusVectorStoreTests {
         when(client.describeCollection(any())).thenReturn(response);
 
         assertThrows(IllegalStateException.class, () -> vectorStore.ensureReady(3));
+    }
+
+    @Test
+    void searchesWithServerSideGovernanceFilterAndReturnsOnlyIdentifiers() {
+        when(client.hasCollection(any())).thenReturn(false);
+        SearchResp.SearchResult result = SearchResp.SearchResult.builder()
+                .id(1L)
+                .score(0.87F)
+                .entity(Map.of("document_id", 100L, "parent_chunk_id", 1000L, "chunk_index", 3L))
+                .build();
+        when(client.search(any())).thenReturn(SearchResp.builder()
+                .searchResults(List.of(List.of(result)))
+                .build());
+        vectorStore.ensureReady(3);
+
+        List<VectorSearchHit> hits = vectorStore.search(new VectorSearchRequest(
+                10L, List.of(20L, 21L), 1, LocalDate.of(2026, 8, 8), 10,
+                List.of(0.1F, 0.2F, 0.3F)));
+
+        ArgumentCaptor<SearchReq> requestCaptor = ArgumentCaptor.forClass(SearchReq.class);
+        verify(client).search(requestCaptor.capture());
+        SearchReq request = requestCaptor.getValue();
+        assertTrue(request.getFilter().contains("tenant_id == {tenantId}"));
+        assertTrue(request.getFilter().contains("document_status == {documentStatus}"));
+        assertTrue(request.getFilter().contains("security_level <= {maximumSecurityLevel}"));
+        assertEquals(List.of(20L, 21L), request.getFilterTemplateValues().get("knowledgeBaseIds"));
+        assertEquals(1L, hits.getFirst().chunkId());
+        assertEquals(1000L, hits.getFirst().parentChunkId());
+        assertEquals(0.87, hits.getFirst().score(), 0.0001);
     }
 
     private VectorRecord record() {

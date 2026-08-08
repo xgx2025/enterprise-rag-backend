@@ -70,6 +70,13 @@ rag:
   vectorization:
     enabled: ${RAG_VECTORIZATION_ENABLED:false}
     batch-size: ${RAG_VECTORIZATION_BATCH_SIZE:16}
+  retrieval:
+    dense-top-k: ${RAG_RETRIEVAL_DENSE_TOP_K:30}
+    sparse-top-k: ${RAG_RETRIEVAL_SPARSE_TOP_K:30}
+    fusion-top-k: ${RAG_RETRIEVAL_FUSION_TOP_K:20}
+    rerank-top-k: ${RAG_RETRIEVAL_RERANK_TOP_K:8}
+    context-max-characters: ${RAG_RETRIEVAL_CONTEXT_MAX_CHARACTERS:12000}
+    max-sources-per-document: ${RAG_RETRIEVAL_MAX_SOURCES_PER_DOCUMENT:2}
   embedding:
     endpoint: ${EMBEDDING_ENDPOINT:}
     api-key: ${EMBEDDING_API_KEY:}

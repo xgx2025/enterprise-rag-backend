@@ -18,4 +18,10 @@ public interface VectorStore {
 
     /** 更新已存在向量的文档生命周期元数据，不重新生成向量。 */
     void updateMetadata(List<VectorMetadata> metadata);
+
+    /**
+     * 在服务端生成的租户、知识库、状态、安全等级和有效期过滤范围内执行稠密向量检索。
+     * 返回值只包含定位元数据，不返回文档正文。
+     */
+    List<VectorSearchHit> search(VectorSearchRequest request);
 }

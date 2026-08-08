@@ -21,7 +21,8 @@ import org.springframework.util.StringUtils;
 @EnableConfigurationProperties({
         VectorizationProperties.class,
         EmbeddingProperties.class,
-        MilvusProperties.class
+        MilvusProperties.class,
+        RetrievalProperties.class
 })
 public class VectorizationConfiguration {
 
