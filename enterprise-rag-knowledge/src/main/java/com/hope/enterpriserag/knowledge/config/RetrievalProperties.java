@@ -13,6 +13,7 @@ public class RetrievalProperties {
     private int denseTopK = 30;
     private int sparseTopK = 30;
     private int fusionTopK = 20;
+    private int rrfK = 60;
     private int rerankTopK = 8;
     private int contextMaxCharacters = 12_000;
     private int maxSourcesPerDocument = 2;

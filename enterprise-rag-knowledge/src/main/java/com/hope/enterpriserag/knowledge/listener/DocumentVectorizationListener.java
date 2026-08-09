@@ -24,10 +24,12 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 文档子块异步向量化处理器。
- * 仅向量化子块，父块继续保存在 MySQL 中并通过 {@code parentChunkId} 在召回后回溯。
+ * 仅向量化子块，并向 Milvus 冗余 Child Chunk 正文供 BM25 使用；父块只保存在 MySQL，
+ * 通过 {@code parentChunkId} 在召回后回溯。
  */
 @Slf4j
 @Component
@@ -36,6 +38,7 @@ import java.util.List;
 public class DocumentVectorizationListener {
     private static final int VECTOR_START_PROGRESS = 70;
     private static final int VECTOR_PROGRESS_SPAN = 29;
+    private static final Set<String> COMPLETION_STATUSES = Set.of("READY", "ACTIVE", "EXPIRED");
 
     private final KnowledgeDocumentMapper documentMapper;
     private final DocumentChunkMapper chunkMapper;
@@ -62,6 +65,7 @@ public class DocumentVectorizationListener {
         }
 
         try {
+            String completionStatus = completionStatus(event);
             int batchSize = properties.getBatchSize();
             if (batchSize <= 0 || batchSize > 256) {
                 throw new IllegalStateException("rag.vectorization.batch-size 必须在 1 到 256 之间");
@@ -100,7 +104,8 @@ public class DocumentVectorizationListener {
 
                 List<VectorRecord> records = new ArrayList<>(batch.size());
                 for (int index = 0; index < batch.size(); index++) {
-                    records.add(toVectorRecord(document, batch.get(index), embeddings.get(index)));
+                    records.add(toVectorRecord(document, batch.get(index), embeddings.get(index),
+                            completionStatus));
                 }
                 vectorStore.upsert(records);
                 markChunks(document, batch.stream().map(DocumentChunk::getId).toList(), "COMPLETED");
@@ -112,7 +117,7 @@ public class DocumentVectorizationListener {
                 updateDocument(document, "PROCESSING", "RUNNING", progress, null, null);
             }
 
-            updateDocument(document, "READY", "COMPLETED", 100, null, null);
+            updateDocument(document, completionStatus, "COMPLETED", 100, null, null);
             updateTask(task, "SUCCEEDED", 100, "COMPLETED", null, true);
             log.info("文档向量化任务完成: tenantId={}, knowledgeBaseId={}, documentId={}, taskId={}, chunks={}, elapsedMs={}",
                     document.getTenantId(), document.getKnowledgeBaseId(), document.getId(), task.getId(),
@@ -128,13 +133,22 @@ public class DocumentVectorizationListener {
         }
     }
 
-    private VectorRecord toVectorRecord(KnowledgeDocument document, DocumentChunk chunk, List<Float> embedding) {
+    private VectorRecord toVectorRecord(KnowledgeDocument document, DocumentChunk chunk, List<Float> embedding,
+                                        String completionStatus) {
         return new VectorRecord(
                 chunk.getId(), document.getTenantId(), document.getKnowledgeBaseId(), document.getId(),
-                chunk.getParentChunkId(), chunk.getChunkIndex(), document.getVersion(), "READY",
+                chunk.getParentChunkId(), chunk.getChunkIndex(), document.getVersion(), completionStatus,
                 document.getDepartment(), document.getSecurityLevel(), document.getAuthorityLevel(),
                 document.getEffectiveFrom(), document.getEffectiveTo(), document.getAllowedRoles(),
-                chunk.getSectionPath(), chunk.getPageNumber(), embedding);
+                chunk.getSectionPath(), chunk.getPageNumber(), chunk.getContent(), embedding);
+    }
+
+    private String completionStatus(DocumentVectorizationEvent event) {
+        String status = event.completionStatus() == null ? "READY" : event.completionStatus().trim().toUpperCase();
+        if (!COMPLETION_STATUSES.contains(status)) {
+            throw new IllegalArgumentException("向量化完成状态无效");
+        }
+        return status;
     }
 
     private void markChunks(KnowledgeDocument document, List<Long> chunkIds, String status) {

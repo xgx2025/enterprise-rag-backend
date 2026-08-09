@@ -3,6 +3,7 @@ package com.hope.enterpriserag.knowledge.vector;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.hope.enterpriserag.knowledge.config.MilvusProperties;
+import io.milvus.common.clientenum.FunctionType;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.common.DataType;
 import io.milvus.v2.common.IndexParam;
@@ -12,10 +13,15 @@ import io.milvus.v2.service.collection.request.CreateCollectionReq;
 import io.milvus.v2.service.collection.request.DescribeCollectionReq;
 import io.milvus.v2.service.collection.request.HasCollectionReq;
 import io.milvus.v2.service.collection.request.LoadCollectionReq;
+import io.milvus.v2.service.vector.request.AnnSearchReq;
 import io.milvus.v2.service.vector.request.DeleteReq;
+import io.milvus.v2.service.vector.request.HybridSearchReq;
 import io.milvus.v2.service.vector.request.SearchReq;
 import io.milvus.v2.service.vector.request.UpsertReq;
+import io.milvus.v2.service.vector.request.data.EmbeddedText;
 import io.milvus.v2.service.vector.request.data.FloatVec;
+import io.milvus.v2.service.vector.request.ranker.RRFRanker;
+import io.milvus.v2.service.vector.response.SearchResp;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,6 +39,8 @@ import java.util.Map;
 public class MilvusVectorStore implements VectorStore {
     private static final String CHUNK_ID = "chunk_id";
     private static final String VECTOR = "embedding";
+    private static final String CONTENT = "content";
+    private static final String SPARSE_VECTOR = "sparse_embedding";
     private static final String TENANT_ID = "tenant_id";
     private static final String KNOWLEDGE_BASE_ID = "knowledge_base_id";
     private static final String DOCUMENT_ID = "document_id";
@@ -128,35 +136,109 @@ public class MilvusVectorStore implements VectorStore {
     }
 
     @Override
-    public List<VectorSearchHit> search(VectorSearchRequest request) {
+    public VectorSearchResult search(VectorSearchRequest request) {
         validateSearchRequest(request);
         requireReady();
-        long effectiveEpochDay = request.effectiveDate().toEpochDay();
-        String filter = TENANT_ID + " == {tenantId}"
-                + " && " + KNOWLEDGE_BASE_ID + " in {knowledgeBaseIds}"
-                + " && " + DOCUMENT_STATUS + " == {documentStatus}"
-                + " && " + SECURITY_LEVEL + " <= {maximumSecurityLevel}"
-                + " && (" + EFFECTIVE_FROM + " == 0 || " + EFFECTIVE_FROM + " <= {effectiveDate})"
-                + " && (" + EFFECTIVE_TO + " == 0 || " + EFFECTIVE_TO + " >= {effectiveDate})";
-        Map<String, Object> filterValues = Map.of(
-                "tenantId", request.tenantId(),
-                "knowledgeBaseIds", request.knowledgeBaseIds(),
-                "documentStatus", "ACTIVE",
-                "maximumSecurityLevel", request.maximumSecurityLevel(),
-                "effectiveDate", effectiveEpochDay);
+        String filter = governanceFilter();
+        Map<String, Object> filterValues = governanceFilterValues(request);
+        List<String> outputFields = List.of(DOCUMENT_ID, "parent_chunk_id", "chunk_index");
 
-        var response = client.search(SearchReq.builder()
+        List<VectorSearchHit> denseHits = request.denseEnabled()
+                ? searchDense(request, filter, filterValues, outputFields)
+                : List.of();
+        List<VectorSearchHit> sparseHits = request.sparseEnabled()
+                ? searchSparse(request, filter, filterValues, outputFields)
+                : List.of();
+
+        List<VectorSearchHit> hybridHits;
+        if (request.denseEnabled() && request.sparseEnabled()) {
+            AnnSearchReq dense = AnnSearchReq.builder()
+                    .vectorFieldName(VECTOR)
+                    .vectors(List.of(new FloatVec(request.embedding())))
+                    .metricType(IndexParam.MetricType.COSINE)
+                    .limit(request.denseTopK())
+                    .filter(filter)
+                    .filterTemplateValues(filterValues)
+                    .build();
+            AnnSearchReq sparse = AnnSearchReq.builder()
+                    .vectorFieldName(SPARSE_VECTOR)
+                    .vectors(List.of(new EmbeddedText(request.query().trim())))
+                    .metricType(IndexParam.MetricType.BM25)
+                    .params("{\"drop_ratio_search\":0}")
+                    .limit(request.sparseTopK())
+                    .filter(filter)
+                    .filterTemplateValues(filterValues)
+                    .build();
+            SearchResp response = client.hybridSearch(HybridSearchReq.builder()
+                    .databaseName(properties.getDatabaseName())
+                    .collectionName(properties.getCollectionName())
+                    .searchRequests(List.of(dense, sparse))
+                    .ranker(RRFRanker.builder().k(request.rrfK()).build())
+                    .limit(request.fusionTopK())
+                    .outFields(outputFields)
+                    .consistencyLevel(ConsistencyLevel.STRONG)
+                    .build());
+            hybridHits = hits(response);
+        } else {
+            hybridHits = request.denseEnabled() ? denseHits : sparseHits;
+        }
+        return new VectorSearchResult(denseHits, sparseHits, hybridHits);
+    }
+
+    private List<VectorSearchHit> searchDense(VectorSearchRequest request, String filter,
+                                               Map<String, Object> filterValues, List<String> outputFields) {
+        return hits(client.search(SearchReq.builder()
                 .databaseName(properties.getDatabaseName())
                 .collectionName(properties.getCollectionName())
                 .annsField(VECTOR)
                 .metricType(IndexParam.MetricType.COSINE)
                 .consistencyLevel(ConsistencyLevel.STRONG)
-                .topK(request.topK())
+                .limit(request.denseTopK())
                 .filter(filter)
                 .filterTemplateValues(filterValues)
-                .outputFields(List.of(DOCUMENT_ID, "parent_chunk_id", "chunk_index"))
+                .outputFields(outputFields)
                 .data(List.of(new FloatVec(request.embedding())))
-                .build());
+                .build()));
+    }
+
+    private List<VectorSearchHit> searchSparse(VectorSearchRequest request, String filter,
+                                                Map<String, Object> filterValues, List<String> outputFields) {
+        return hits(client.search(SearchReq.builder()
+                .databaseName(properties.getDatabaseName())
+                .collectionName(properties.getCollectionName())
+                .annsField(SPARSE_VECTOR)
+                .metricType(IndexParam.MetricType.BM25)
+                .searchParams(Map.of("drop_ratio_search", 0))
+                .consistencyLevel(ConsistencyLevel.STRONG)
+                .limit(request.sparseTopK())
+                .filter(filter)
+                .filterTemplateValues(filterValues)
+                .outputFields(outputFields)
+                .data(List.of(new EmbeddedText(request.query().trim())))
+                .build()));
+    }
+
+    private String governanceFilter() {
+        return TENANT_ID + " == {tenantId}"
+                + " && " + KNOWLEDGE_BASE_ID + " in {knowledgeBaseIds}"
+                + " && " + DOCUMENT_ID + " in {documentIds}"
+                + " && " + DOCUMENT_STATUS + " == {documentStatus}"
+                + " && " + SECURITY_LEVEL + " <= {maximumSecurityLevel}"
+                + " && (" + EFFECTIVE_FROM + " == 0 || " + EFFECTIVE_FROM + " <= {effectiveDate})"
+                + " && (" + EFFECTIVE_TO + " == 0 || " + EFFECTIVE_TO + " >= {effectiveDate})";
+    }
+
+    private Map<String, Object> governanceFilterValues(VectorSearchRequest request) {
+        return Map.of(
+                "tenantId", request.tenantId(),
+                "knowledgeBaseIds", request.knowledgeBaseIds(),
+                "documentIds", request.documentIds(),
+                "documentStatus", "ACTIVE",
+                "maximumSecurityLevel", request.maximumSecurityLevel(),
+                "effectiveDate", request.effectiveDate().toEpochDay());
+    }
+
+    private List<VectorSearchHit> hits(SearchResp response) {
         if (response == null || response.getSearchResults() == null || response.getSearchResults().isEmpty()) {
             return List.of();
         }
@@ -190,9 +272,26 @@ public class MilvusVectorStore implements VectorStore {
         schema.addField(field("section_path", DataType.VarChar, false, 1024));
         schema.addField(field("page_number", DataType.Int64, false, null));
         schema.addField(AddFieldReq.builder()
+                .fieldName(CONTENT)
+                .dataType(DataType.VarChar)
+                .maxLength(8192)
+                .enableAnalyzer(true)
+                .analyzerParams(Map.of("type", "chinese"))
+                .build());
+        schema.addField(AddFieldReq.builder()
+                .fieldName(SPARSE_VECTOR)
+                .dataType(DataType.SparseFloatVector)
+                .build());
+        schema.addField(AddFieldReq.builder()
                 .fieldName(VECTOR)
                 .dataType(DataType.FloatVector)
                 .dimension(dimensions)
+                .build());
+        schema.addFunction(CreateCollectionReq.Function.builder()
+                .functionType(FunctionType.BM25)
+                .name("content_bm25")
+                .inputFieldNames(List.of(CONTENT))
+                .outputFieldNames(List.of(SPARSE_VECTOR))
                 .build());
 
         List<IndexParam> indexes = new ArrayList<>();
@@ -200,6 +299,15 @@ public class MilvusVectorStore implements VectorStore {
                 .fieldName(VECTOR)
                 .indexType(IndexParam.IndexType.AUTOINDEX)
                 .metricType(IndexParam.MetricType.COSINE)
+                .build());
+        indexes.add(IndexParam.builder()
+                .fieldName(SPARSE_VECTOR)
+                .indexType(IndexParam.IndexType.AUTOINDEX)
+                .metricType(IndexParam.MetricType.BM25)
+                .extraParams(Map.of(
+                        "inverted_index_algo", "DAAT_MAXSCORE",
+                        "bm25_k1", 1.2,
+                        "bm25_b", 0.75))
                 .build());
         for (String fieldName : List.of(TENANT_ID, KNOWLEDGE_BASE_ID, DOCUMENT_ID, DOCUMENT_STATUS,
                 SECURITY_LEVEL, EFFECTIVE_FROM, EFFECTIVE_TO)) {
@@ -212,7 +320,7 @@ public class MilvusVectorStore implements VectorStore {
         client.createCollection(CreateCollectionReq.builder()
                 .databaseName(properties.getDatabaseName())
                 .collectionName(properties.getCollectionName())
-                .description("Enterprise RAG child chunk embeddings and authorization metadata")
+                .description("Enterprise RAG child chunks for dense and BM25 hybrid search")
                 .collectionSchema(schema)
                 .indexParams(indexes)
                 .build());
@@ -233,10 +341,25 @@ public class MilvusVectorStore implements VectorStore {
                     + "，与配置维度 " + dimensions + " 不一致");
         }
         for (String fieldName : List.of(CHUNK_ID, TENANT_ID, KNOWLEDGE_BASE_ID, DOCUMENT_ID,
-                "parent_chunk_id", "chunk_index", DOCUMENT_STATUS, SECURITY_LEVEL, EFFECTIVE_FROM, EFFECTIVE_TO)) {
+                "parent_chunk_id", "chunk_index", DOCUMENT_STATUS, SECURITY_LEVEL, EFFECTIVE_FROM, EFFECTIVE_TO,
+                CONTENT, SPARSE_VECTOR)) {
             if (schema.getField(fieldName) == null) {
                 throw new IllegalStateException("已有 Milvus Collection 缺少字段: " + fieldName);
             }
+        }
+        if (!DataType.VarChar.equals(schema.getField(CONTENT).getDataType())
+                || !Boolean.TRUE.equals(schema.getField(CONTENT).getEnableAnalyzer())) {
+            throw new IllegalStateException("已有 Milvus Collection 的 content 字段未启用文本 Analyzer");
+        }
+        if (!DataType.SparseFloatVector.equals(schema.getField(SPARSE_VECTOR).getDataType())) {
+            throw new IllegalStateException("已有 Milvus Collection 的 sparse_embedding 字段类型无效");
+        }
+        boolean hasBm25Function = schema.getFunctionList() != null && schema.getFunctionList().stream()
+                .anyMatch(function -> FunctionType.BM25.equals(function.getFunctionType())
+                        && List.of(CONTENT).equals(function.getInputFieldNames())
+                        && List.of(SPARSE_VECTOR).equals(function.getOutputFieldNames()));
+        if (!hasBm25Function) {
+            throw new IllegalStateException("已有 Milvus Collection 缺少 content 到 sparse_embedding 的 BM25 Function");
         }
     }
 
@@ -272,6 +395,7 @@ public class MilvusVectorStore implements VectorStore {
         row.addProperty("allowed_roles", value(record.allowedRoles()));
         row.addProperty("section_path", value(record.sectionPath()));
         row.addProperty("page_number", record.pageNumber() == null ? -1L : record.pageNumber().longValue());
+        row.addProperty(CONTENT, record.content());
         row.add(VECTOR, gson.toJsonTree(record.embedding()));
         return row;
     }
@@ -279,7 +403,8 @@ public class MilvusVectorStore implements VectorStore {
     private void validate(VectorRecord record) {
         if (record.chunkId() == null || record.tenantId() == null || record.knowledgeBaseId() == null
                 || record.documentId() == null || record.parentChunkId() == null || record.chunkIndex() == null
-                || record.securityLevel() == null || record.authorityLevel() == null || record.embedding() == null) {
+                || record.securityLevel() == null || record.authorityLevel() == null || record.content() == null
+                || record.content().isBlank() || record.embedding() == null) {
             throw new IllegalArgumentException("Milvus 向量记录缺少必填字段");
         }
         if (record.embedding().size() != configuredDimensions) {
@@ -288,21 +413,34 @@ public class MilvusVectorStore implements VectorStore {
         if (value(record.allowedRoles()).length() > 4096) {
             throw new IllegalArgumentException("文档访问角色元数据超过 Milvus 字段限制");
         }
+        if (record.content().length() > 8192) {
+            throw new IllegalArgumentException("子块正文超过 Milvus content 字段限制");
+        }
     }
 
     private void validateSearchRequest(VectorSearchRequest request) {
         if (request == null || request.tenantId() == null || request.effectiveDate() == null
                 || request.knowledgeBaseIds() == null || request.knowledgeBaseIds().isEmpty()
-                || request.embedding() == null) {
+                || request.documentIds() == null || request.documentIds().isEmpty()
+                || request.query() == null || request.query().isBlank()) {
             throw new IllegalArgumentException("Milvus 检索请求缺少必填字段");
         }
-        if (request.topK() <= 0 || request.topK() > 200) {
+        if (!request.denseEnabled() && !request.sparseEnabled()) {
+            throw new IllegalArgumentException("Milvus Dense 和 BM25 检索不能同时关闭");
+        }
+        if (request.denseTopK() <= 0 || request.denseTopK() > 200
+                || request.sparseTopK() <= 0 || request.sparseTopK() > 200
+                || request.fusionTopK() <= 0 || request.fusionTopK() > 200) {
             throw new IllegalArgumentException("Milvus 检索 topK 必须在 1 到 200 之间");
+        }
+        if (request.rrfK() <= 0 || request.rrfK() >= 16384) {
+            throw new IllegalArgumentException("Milvus RRF k 必须在 1 到 16383 之间");
         }
         if (request.maximumSecurityLevel() < 1 || request.maximumSecurityLevel() > 3) {
             throw new IllegalArgumentException("Milvus 检索安全等级必须在 1 到 3 之间");
         }
-        if (request.embedding().size() != configuredDimensions) {
+        if (request.denseEnabled() && (request.embedding() == null
+                || request.embedding().size() != configuredDimensions)) {
             throw new IllegalArgumentException("Milvus 查询向量维度与 Collection 配置不一致");
         }
     }

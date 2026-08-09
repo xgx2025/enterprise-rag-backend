@@ -16,6 +16,7 @@ import com.hope.enterpriserag.knowledge.retrieval.RetrievalAccessContext;
 import com.hope.enterpriserag.knowledge.retrieval.RetrievalCommand;
 import com.hope.enterpriserag.knowledge.vector.VectorSearchHit;
 import com.hope.enterpriserag.knowledge.vector.VectorSearchRequest;
+import com.hope.enterpriserag.knowledge.vector.VectorSearchResult;
 import com.hope.enterpriserag.knowledge.vector.VectorStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -78,8 +80,10 @@ class RetrievalServiceTests {
         when(documentMapper.selectList(any())).thenReturn(List.of(document));
         when(embeddingService.dimensions()).thenReturn(3);
         when(embeddingService.embed(any())).thenReturn(List.of(List.of(0.1F, 0.2F, 0.3F)));
-        when(vectorStore.search(any())).thenReturn(List.of(new VectorSearchHit(1L, 100L, 1000L, 1, 0.88)));
-        when(chunkMapper.selectList(any())).thenReturn(List.of(child), List.of(child), List.of(parent));
+        VectorSearchHit hit = new VectorSearchHit(1L, 100L, 1000L, 1, 0.88);
+        when(vectorStore.search(any())).thenReturn(new VectorSearchResult(
+                List.of(hit), List.of(hit), List.of(hit)));
+        when(chunkMapper.selectList(any())).thenReturn(List.of(child), List.of(parent));
 
         var response = service.retrieve(access(), command());
 
@@ -94,7 +98,10 @@ class RetrievalServiceTests {
         verify(vectorStore).search(requestCaptor.capture());
         assertEquals(10L, requestCaptor.getValue().tenantId());
         assertEquals(List.of(20L), requestCaptor.getValue().knowledgeBaseIds());
+        assertEquals(List.of(100L), requestCaptor.getValue().documentIds());
         assertEquals(1, requestCaptor.getValue().maximumSecurityLevel());
+        assertTrue(requestCaptor.getValue().denseEnabled());
+        assertTrue(requestCaptor.getValue().sparseEnabled());
     }
 
     @Test
@@ -107,6 +114,30 @@ class RetrievalServiceTests {
         assertTrue(response.finalContext().isEmpty());
         assertTrue(response.sources().isEmpty());
         verifyNoInteractions(embeddingService, vectorStore, chunkMapper);
+    }
+
+    @Test
+    void sparseOnlyUsesMilvusBm25WithoutCallingEmbeddingEndpoint() {
+        KnowledgeDocument document = document("[\"USER\"]");
+        DocumentChunk child = child();
+        VectorSearchHit hit = new VectorSearchHit(1L, 100L, 1000L, 1, 3.2);
+        when(knowledgeBaseMapper.selectList(any())).thenReturn(List.of(knowledgeBase()));
+        when(documentMapper.selectList(any())).thenReturn(List.of(document));
+        when(embeddingService.dimensions()).thenReturn(3);
+        when(vectorStore.search(any())).thenReturn(new VectorSearchResult(
+                List.of(), List.of(hit), List.of(hit)));
+        when(chunkMapper.selectList(any())).thenReturn(List.of(child), List.of(parent()));
+
+        var response = service.retrieve(access(),
+                new RetrievalCommand("深圳住宿标准", List.of(20L), false, true, true, 5, 5000));
+
+        assertEquals(0, response.denseResults().size());
+        assertEquals(1, response.sparseResults().size());
+        verify(embeddingService, never()).embed(any());
+        ArgumentCaptor<VectorSearchRequest> requestCaptor = ArgumentCaptor.forClass(VectorSearchRequest.class);
+        verify(vectorStore).search(requestCaptor.capture());
+        assertEquals(null, requestCaptor.getValue().embedding());
+        assertTrue(requestCaptor.getValue().sparseEnabled());
     }
 
     private RetrievalAccessContext access() {

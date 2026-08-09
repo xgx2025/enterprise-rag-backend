@@ -282,6 +282,49 @@ public class DocumentService {
                 tenantId, id, task.getId(), retryCount);
     }
 
+    /**
+     * 使用 MySQL 中已有的 Child Chunk 重建指定文档的 Milvus 索引，不重新下载或解析原文件。
+     * 成功后恢复调用前的文档生命周期状态，适用于 Collection schema 升级和索引修复。
+     */
+    @Transactional
+    public void reindex(Long tenantId, Long id) {
+        KnowledgeDocument document = requireOwnedForUpdate(tenantId, id);
+        String completionStatus = document.getStatus();
+        if (!Set.of("READY", "ACTIVE", "EXPIRED").contains(completionStatus)
+                || !"COMPLETED".equals(document.getParseStatus())) {
+            throw new BusinessException("仅已完成解析的就绪、生效或失效文档可以重建索引");
+        }
+        long childCount = chunkMapper.selectCount(new LambdaQueryWrapper<DocumentChunk>()
+                .eq(DocumentChunk::getTenantId, tenantId)
+                .eq(DocumentChunk::getDocumentId, id)
+                .isNotNull(DocumentChunk::getParentChunkId));
+        if (childCount <= 0) {
+            throw new BusinessException("文档没有可用于重建索引的子块");
+        }
+
+        int retryCount = Math.toIntExact(taskMapper.selectCount(new LambdaQueryWrapper<IngestionTask>()
+                .eq(IngestionTask::getDocumentId, id)));
+        document.setStatus("PROCESSING");
+        document.setEmbeddingStatus("PENDING");
+        document.setProcessProgress(70);
+        document.setFailureStage(null);
+        document.setFailureMessage(null);
+        document.setUpdatedAt(LocalDateTime.now());
+        documentMapper.updateById(document);
+        chunkMapper.update(null, new UpdateWrapper<DocumentChunk>()
+                .eq("tenant_id", tenantId)
+                .eq("document_id", id)
+                .isNotNull("parent_chunk_id")
+                .set("embedding_status", "PENDING"));
+
+        IngestionTask task = createTask(document, retryCount, "REINDEX", "WAITING_VECTOR", 70,
+                "EMBEDDING_PENDING");
+        taskMapper.insert(task);
+        eventPublisher.publishEvent(new DocumentVectorizationEvent(id, task.getId(), completionStatus));
+        log.info("文档索引重建任务已提交: tenantId={}, documentId={}, taskId={}, completionStatus={}, chunks={}",
+                tenantId, id, task.getId(), completionStatus, childCount);
+    }
+
     /** 查询当前租户文档的全部父子分块。 */
     public List<DocumentChunkResponse> chunks(Long tenantId, Long documentId) {
         requireOwned(tenantId, documentId);

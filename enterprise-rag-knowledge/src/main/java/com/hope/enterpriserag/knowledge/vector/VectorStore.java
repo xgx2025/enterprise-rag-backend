@@ -20,8 +20,8 @@ public interface VectorStore {
     void updateMetadata(List<VectorMetadata> metadata);
 
     /**
-     * 在服务端生成的租户、知识库、状态、安全等级和有效期过滤范围内执行稠密向量检索。
-     * 返回值只包含定位元数据，不返回文档正文。
+     * 在服务端生成的租户、知识库、文档白名单、状态、安全等级和有效期范围内执行混合检索。
+     * Dense 与 BM25 使用相同过滤条件，由 Milvus RRF 融合；返回值只包含定位元数据。
      */
-    List<VectorSearchHit> search(VectorSearchRequest request);
+    VectorSearchResult search(VectorSearchRequest request);
 }

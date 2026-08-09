@@ -111,6 +111,28 @@ class DocumentServiceTests {
         assertEquals(100L, eventCaptor.getValue().documentId());
     }
 
+    @Test
+    void reindexesParsedActiveDocumentAndRestoresActiveStatusAfterCompletion() {
+        KnowledgeDocument document = document("ACTIVE");
+        document.setParseStatus("COMPLETED");
+        document.setEmbeddingStatus("COMPLETED");
+        when(documentMapper.selectOne(any())).thenReturn(document);
+        when(chunkMapper.selectCount(any())).thenReturn(3L);
+        when(taskMapper.selectCount(any())).thenReturn(2L);
+
+        documentService.reindex(10L, 100L);
+
+        assertEquals("PROCESSING", document.getStatus());
+        assertEquals("PENDING", document.getEmbeddingStatus());
+        assertEquals(70, document.getProcessProgress());
+        verify(documentMapper).updateById(document);
+        ArgumentCaptor<DocumentVectorizationEvent> eventCaptor =
+                ArgumentCaptor.forClass(DocumentVectorizationEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertEquals(100L, eventCaptor.getValue().documentId());
+        assertEquals("ACTIVE", eventCaptor.getValue().completionStatus());
+    }
+
     private KnowledgeDocument document(String status) {
         KnowledgeDocument document = new KnowledgeDocument();
         document.setId(100L);

@@ -18,10 +18,10 @@ import com.hope.enterpriserag.knowledge.retrieval.ContextAssembler;
 import com.hope.enterpriserag.knowledge.retrieval.Reranker;
 import com.hope.enterpriserag.knowledge.retrieval.RetrievalAccessContext;
 import com.hope.enterpriserag.knowledge.retrieval.RetrievalCommand;
-import com.hope.enterpriserag.knowledge.retrieval.RetrievalTextAnalyzer;
 import com.hope.enterpriserag.knowledge.retrieval.RetrievedChunk;
 import com.hope.enterpriserag.knowledge.vector.VectorSearchHit;
 import com.hope.enterpriserag.knowledge.vector.VectorSearchRequest;
+import com.hope.enterpriserag.knowledge.vector.VectorSearchResult;
 import com.hope.enterpriserag.knowledge.vector.VectorStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,7 +31,6 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -51,7 +50,6 @@ import java.util.stream.Collectors;
 @ConditionalOnProperty(prefix = "rag.vectorization", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class RetrievalService {
-    private static final double RRF_K = 60.0;
     private static final int MAX_RESULT_LIMIT = 20;
     private static final int MAX_CONTEXT_CHARACTERS = 30_000;
 
@@ -86,32 +84,41 @@ public class RetrievalService {
         timing.put("permission.filter", elapsedMillis(stageStartedAt));
 
         List<RetrievedChunk> denseCandidates = List.of();
-        int denseRawCount = 0;
+        List<RetrievedChunk> sparseCandidates = List.of();
+        List<RetrievedChunk> fused = List.of();
+        int rawCount = 0;
         stageStartedAt = System.nanoTime();
-        if (command.denseEnabled() && !knowledgeBaseIds.isEmpty() && !documentsById.isEmpty()) {
+        if (!knowledgeBaseIds.isEmpty() && !documentsById.isEmpty()) {
             vectorStore.ensureReady(embeddingService.dimensions());
-            List<List<Float>> embeddings = embeddingService.embed(List.of(command.query().trim()));
-            if (embeddings.size() != 1) {
-                throw new IllegalStateException("查询 Embedding 返回数量不正确");
+            List<Float> queryEmbedding = null;
+            if (command.denseEnabled()) {
+                List<List<Float>> embeddings = embeddingService.embed(List.of(command.query().trim()));
+                if (embeddings.size() != 1) {
+                    throw new IllegalStateException("查询 Embedding 返回数量不正确");
+                }
+                queryEmbedding = embeddings.getFirst();
             }
-            List<VectorSearchHit> hits = vectorStore.search(new VectorSearchRequest(
-                    access.tenantId(), knowledgeBaseIds, access.maximumSecurityLevel(), effectiveDate,
-                    bounded(properties.getDenseTopK(), 1, 100), embeddings.getFirst()));
-            denseRawCount = hits.size();
-            denseCandidates = materializeDense(hits, documentsById, access.tenantId());
+            VectorSearchResult searchResult = vectorStore.search(new VectorSearchRequest(
+                    access.tenantId(), knowledgeBaseIds, List.copyOf(documentsById.keySet()),
+                    access.maximumSecurityLevel(), effectiveDate, command.query().trim(),
+                    command.denseEnabled(), command.sparseEnabled(),
+                    bounded(properties.getDenseTopK(), 1, 100),
+                    bounded(properties.getSparseTopK(), 1, 100),
+                    bounded(properties.getFusionTopK(), 1, 100),
+                    bounded(properties.getRrfK(), 1, 16_383), queryEmbedding));
+            rawCount = searchResult.denseHits().size() + searchResult.sparseHits().size();
+            Map<Long, DocumentChunk> chunks = loadAuthorizedChildren(searchResult, documentsById,
+                    access.tenantId());
+            Map<Long, Double> denseScores = scores(searchResult.denseHits());
+            Map<Long, Double> sparseScores = scores(searchResult.sparseHits());
+            denseCandidates = materialize(searchResult.denseHits(), documentsById, chunks,
+                    denseScores, Map.of(), false);
+            sparseCandidates = materialize(searchResult.sparseHits(), documentsById, chunks,
+                    Map.of(), sparseScores, false);
+            fused = materialize(searchResult.hybridHits(), documentsById, chunks,
+                    denseScores, sparseScores, true);
         }
-        timing.put("dense.retrieve", elapsedMillis(stageStartedAt));
-
-        stageStartedAt = System.nanoTime();
-        List<RetrievedChunk> sparseCandidates = command.sparseEnabled() && !documentsById.isEmpty()
-                ? sparseRetrieve(command.query(), access.tenantId(), documentsById)
-                : List.of();
-        timing.put("sparse.retrieve", elapsedMillis(stageStartedAt));
-
-        stageStartedAt = System.nanoTime();
-        List<RetrievedChunk> fused = fuse(denseCandidates, sparseCandidates,
-                bounded(properties.getFusionTopK(), 1, 100));
-        timing.put("rrf.fusion", elapsedMillis(stageStartedAt));
+        timing.put("milvus.hybrid", elapsedMillis(stageStartedAt));
 
         stageStartedAt = System.nanoTime();
         List<RetrievedChunk> withParents = backtrackParents(access.tenantId(), fused);
@@ -139,8 +146,9 @@ public class RetrievalService {
         timing.put("context.build", elapsedMillis(stageStartedAt));
 
         long totalTime = elapsedMillis(startedAt);
-        int permissionFiltered = Math.max(0, denseRawCount - denseCandidates.size());
-        var stats = new RetrievalStatsResponse(denseRawCount + sparseCandidates.size(), permissionFiltered,
+        int materializedCount = denseCandidates.size() + sparseCandidates.size();
+        int permissionFiltered = Math.max(0, rawCount - materializedCount);
+        var stats = new RetrievalStatsResponse(rawCount, permissionFiltered,
                 fused.size(), reranked.size(), totalTime);
         log.info("企业检索完成: tenantId={}, userId={}, traceId={}, knowledgeBases={}, denseCandidates={}, sparseCandidates={}, fusionCandidates={}, rerankKept={}, elapsedMs={}",
                 access.tenantId(), access.userId(), traceId, knowledgeBaseIds.size(), denseCandidates.size(),
@@ -199,18 +207,38 @@ public class RetrievalService {
                 .toList();
     }
 
-    private List<RetrievedChunk> materializeDense(List<VectorSearchHit> hits,
-                                                   Map<Long, KnowledgeDocument> documentsById,
-                                                   Long tenantId) {
-        if (hits.isEmpty()) {
-            return List.of();
+    private Map<Long, DocumentChunk> loadAuthorizedChildren(VectorSearchResult searchResult,
+                                                             Map<Long, KnowledgeDocument> documentsById,
+                                                             Long tenantId) {
+        List<Long> chunkIds = java.util.stream.Stream.of(searchResult.denseHits(), searchResult.sparseHits(),
+                        searchResult.hybridHits())
+                .flatMap(List::stream)
+                .map(VectorSearchHit::chunkId)
+                .distinct()
+                .toList();
+        if (chunkIds.isEmpty()) {
+            return Map.of();
         }
-        List<Long> chunkIds = hits.stream().map(VectorSearchHit::chunkId).distinct().toList();
-        Map<Long, DocumentChunk> chunks = chunkMapper.selectList(new LambdaQueryWrapper<DocumentChunk>()
+        return chunkMapper.selectList(new LambdaQueryWrapper<DocumentChunk>()
                         .eq(DocumentChunk::getTenantId, tenantId)
+                        .in(DocumentChunk::getDocumentId, documentsById.keySet())
                         .in(DocumentChunk::getId, chunkIds)
-                        .isNotNull(DocumentChunk::getParentChunkId))
+                        .isNotNull(DocumentChunk::getParentChunkId)
+                        .eq(DocumentChunk::getEmbeddingStatus, "COMPLETED"))
                 .stream().collect(Collectors.toMap(DocumentChunk::getId, chunk -> chunk));
+    }
+
+    private Map<Long, Double> scores(List<VectorSearchHit> hits) {
+        return hits.stream().collect(Collectors.toMap(VectorSearchHit::chunkId, VectorSearchHit::score,
+                Math::max, LinkedHashMap::new));
+    }
+
+    private List<RetrievedChunk> materialize(List<VectorSearchHit> hits,
+                                              Map<Long, KnowledgeDocument> documentsById,
+                                              Map<Long, DocumentChunk> chunks,
+                                              Map<Long, Double> denseScores,
+                                              Map<Long, Double> sparseScores,
+                                              boolean fusionStage) {
         List<RetrievedChunk> result = new ArrayList<>();
         for (VectorSearchHit hit : hits) {
             KnowledgeDocument document = documentsById.get(hit.documentId());
@@ -219,85 +247,15 @@ public class RetrievalService {
                     || !hit.parentChunkId().equals(chunk.getParentChunkId())) {
                 continue;
             }
-            result.add(candidate(document, chunk, hit.score(), 0.0));
+            result.add(candidate(document, chunk,
+                    denseScores.getOrDefault(hit.chunkId(), 0.0),
+                    sparseScores.getOrDefault(hit.chunkId(), 0.0))
+                    .withRetrievalScores(
+                            denseScores.getOrDefault(hit.chunkId(), 0.0),
+                            sparseScores.getOrDefault(hit.chunkId(), 0.0),
+                            fusionStage ? hit.score() : 0.0));
         }
-        return result;
-    }
-
-    private List<RetrievedChunk> sparseRetrieve(String queryText, Long tenantId,
-                                                 Map<Long, KnowledgeDocument> documentsById) {
-        List<String> terms = RetrievalTextAnalyzer.terms(queryText);
-        if (terms.isEmpty()) {
-            return List.of();
-        }
-        int topK = bounded(properties.getSparseTopK(), 1, 100);
-        LambdaQueryWrapper<DocumentChunk> query = new LambdaQueryWrapper<DocumentChunk>()
-                .eq(DocumentChunk::getTenantId, tenantId)
-                .in(DocumentChunk::getDocumentId, documentsById.keySet())
-                .isNotNull(DocumentChunk::getParentChunkId)
-                .eq(DocumentChunk::getEmbeddingStatus, "COMPLETED")
-                .and(wrapper -> {
-                    wrapper.like(DocumentChunk::getContent, terms.getFirst());
-                    for (int index = 1; index < terms.size(); index++) {
-                        wrapper.or().like(DocumentChunk::getContent, terms.get(index));
-                    }
-                })
-                .last("LIMIT " + Math.min(500, topK * 10));
-        List<DocumentChunk> chunks = chunkMapper.selectList(query);
-        Map<Long, Double> scores = bm25Scores(chunks, terms);
-        return chunks.stream()
-                .map(chunk -> candidate(documentsById.get(chunk.getDocumentId()), chunk, 0.0,
-                        scores.getOrDefault(chunk.getId(), 0.0)))
-                .filter(candidate -> candidate.sparseScore() > 0.0)
-                .sorted(Comparator.comparingDouble(RetrievedChunk::sparseScore).reversed()
-                        .thenComparing(RetrievedChunk::childChunkId))
-                .limit(topK)
-                .toList();
-    }
-
-    private Map<Long, Double> bm25Scores(List<DocumentChunk> chunks, List<String> terms) {
-        if (chunks.isEmpty()) {
-            return Map.of();
-        }
-        double averageLength = chunks.stream().mapToInt(chunk -> chunk.getContent().length())
-                .average().orElse(1.0);
-        Map<String, Long> documentFrequency = terms.stream().collect(Collectors.toMap(
-                term -> term,
-                term -> chunks.stream().filter(chunk -> chunk.getContent().toLowerCase(Locale.ROOT)
-                        .contains(term)).count(),
-                (left, right) -> left,
-                LinkedHashMap::new));
-        Map<Long, Double> scores = new HashMap<>();
-        double k1 = 1.5;
-        double b = 0.75;
-        for (DocumentChunk chunk : chunks) {
-            String content = chunk.getContent().toLowerCase(Locale.ROOT);
-            double score = 0.0;
-            for (String term : terms) {
-                int frequency = occurrences(content, term);
-                if (frequency == 0) {
-                    continue;
-                }
-                double df = documentFrequency.getOrDefault(term, 0L);
-                double inverseDocumentFrequency = Math.log(1.0
-                        + (chunks.size() - df + 0.5) / (df + 0.5));
-                double lengthNormalization = 1.0 - b + b * content.length() / averageLength;
-                score += inverseDocumentFrequency * frequency * (k1 + 1.0)
-                        / (frequency + k1 * lengthNormalization);
-            }
-            scores.put(chunk.getId(), score);
-        }
-        return scores;
-    }
-
-    private int occurrences(String content, String term) {
-        int count = 0;
-        int offset = 0;
-        while ((offset = content.indexOf(term, offset)) >= 0) {
-            count++;
-            offset += Math.max(1, term.length());
-        }
-        return count;
+        return List.copyOf(result);
     }
 
     private RetrievedChunk candidate(KnowledgeDocument document, DocumentChunk chunk,
@@ -310,33 +268,6 @@ public class RetrievalService {
                 document.getSecurityLevel(), document.getAuthorityLevel(), document.getEffectiveFrom(),
                 chunk.getSectionPath(), chunk.getPageNumber(), chunk.getChunkIndex(), chunk.getContent(),
                 null, denseScore, sparseScore, 0.0, 0.0);
-    }
-
-    private List<RetrievedChunk> fuse(List<RetrievedChunk> dense, List<RetrievedChunk> sparse, int limit) {
-        Map<Long, Accumulator> accumulators = new LinkedHashMap<>();
-        accumulate(accumulators, dense, true);
-        accumulate(accumulators, sparse, false);
-        return accumulators.values().stream()
-                .map(Accumulator::toCandidate)
-                .sorted(Comparator.comparingDouble(RetrievedChunk::fusionScore).reversed()
-                        .thenComparing(RetrievedChunk::childChunkId))
-                .limit(limit)
-                .toList();
-    }
-
-    private void accumulate(Map<Long, Accumulator> accumulators, List<RetrievedChunk> candidates,
-                            boolean denseSource) {
-        for (int index = 0; index < candidates.size(); index++) {
-            RetrievedChunk candidate = candidates.get(index);
-            Accumulator accumulator = accumulators.computeIfAbsent(candidate.childChunkId(),
-                    ignored -> new Accumulator(candidate));
-            accumulator.fusionScore += 1.0 / (RRF_K + index + 1);
-            if (denseSource) {
-                accumulator.denseScore = candidate.denseScore();
-            } else {
-                accumulator.sparseScore = candidate.sparseScore();
-            }
-        }
     }
 
     private List<RetrievedChunk> backtrackParents(Long tenantId, List<RetrievedChunk> candidates) {
@@ -420,18 +351,4 @@ public class RetrievalService {
         return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
-    private static final class Accumulator {
-        private final RetrievedChunk base;
-        private double denseScore;
-        private double sparseScore;
-        private double fusionScore;
-
-        private Accumulator(RetrievedChunk base) {
-            this.base = base;
-        }
-
-        private RetrievedChunk toCandidate() {
-            return base.withRetrievalScores(denseScore, sparseScore, fusionScore);
-        }
-    }
 }

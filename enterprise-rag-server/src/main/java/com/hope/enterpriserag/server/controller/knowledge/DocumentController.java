@@ -29,7 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 文档管理 REST 接口，提供文档上传、查询、发布、失效、归档、重试及原文预览能力。
+ * 文档管理 REST 接口，提供文档上传、查询、发布、失效、归档、重试、索引重建及原文预览能力。
  * 所有操作均以当前认证用户所属租户为数据边界。
  */
 @RestController
@@ -81,6 +81,13 @@ public class DocumentController {
     @PostMapping("/{id}/retry")
     public Result<Void> retry(@AuthenticationPrincipal User user, @PathVariable String id) {
         documentService.retry(user.getTenantId(), parseId(id));
+        return Result.ok();
+    }
+
+    /** 使用 MySQL 中已有的 Child Chunk 异步重建 Milvus 索引，不重新解析原文件。 */
+    @PostMapping("/{id}/reindex")
+    public Result<Void> reindex(@AuthenticationPrincipal User user, @PathVariable String id) {
+        documentService.reindex(user.getTenantId(), parseId(id));
         return Result.ok();
     }
 

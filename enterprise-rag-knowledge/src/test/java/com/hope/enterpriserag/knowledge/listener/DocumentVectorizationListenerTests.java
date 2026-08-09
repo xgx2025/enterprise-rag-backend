@@ -20,6 +20,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -82,18 +83,33 @@ class DocumentVectorizationListenerTests {
     }
 
     @Test
-    void recordsEmbeddingFailureWithoutLoggingOrPersistingDocumentContent() {
+    void recordsEmbeddingFailureWithoutWritingVectors() {
         when(chunkMapper.selectList(any())).thenReturn(List.of(chunk(1L)));
         when(embeddingService.embed(any())).thenThrow(new EmbeddingException("外部服务不可用"));
 
         listener.process(new DocumentVectorizationEvent(100L, 200L));
 
         verify(vectorStore).deleteDocument(10L, 100L);
+        verify(vectorStore, times(0)).upsert(any());
         assertEquals("FAILED", document.getStatus());
         assertEquals("FAILED", document.getEmbeddingStatus());
         assertEquals("EMBEDDING", document.getFailureStage());
         assertEquals("FAILED", task.getStatus());
         assertEquals("EMBEDDING", task.getCurrentStage());
+    }
+
+    @Test
+    void reindexRestoresActiveStatusAndWritesChildContentForBm25() {
+        when(chunkMapper.selectList(any())).thenReturn(List.of(chunk(1L)));
+        when(embeddingService.embed(any())).thenReturn(List.of(List.of(0.1F, 0.2F, 0.3F)));
+
+        listener.process(new DocumentVectorizationEvent(100L, 200L, "ACTIVE"));
+
+        assertEquals("ACTIVE", document.getStatus());
+        assertEquals("COMPLETED", document.getEmbeddingStatus());
+        verify(vectorStore).upsert(argThat(records -> records.size() == 1
+                && "ACTIVE".equals(records.getFirst().documentStatus())
+                && "仅用于测试的分块 1".equals(records.getFirst().content())));
     }
 
     @Test

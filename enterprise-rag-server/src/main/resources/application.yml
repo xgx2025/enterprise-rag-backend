@@ -74,6 +74,7 @@ rag:
     dense-top-k: ${RAG_RETRIEVAL_DENSE_TOP_K:30}
     sparse-top-k: ${RAG_RETRIEVAL_SPARSE_TOP_K:30}
     fusion-top-k: ${RAG_RETRIEVAL_FUSION_TOP_K:20}
+    rrf-k: ${RAG_RETRIEVAL_RRF_K:60}
     rerank-top-k: ${RAG_RETRIEVAL_RERANK_TOP_K:8}
     context-max-characters: ${RAG_RETRIEVAL_CONTEXT_MAX_CHARACTERS:12000}
     max-sources-per-document: ${RAG_RETRIEVAL_MAX_SOURCES_PER_DOCUMENT:2}
@@ -91,4 +92,4 @@ rag:
     uri: ${MILVUS_URI:http://localhost:19530}
     token: ${MILVUS_TOKEN:}
     database-name: ${MILVUS_DATABASE:default}
-    collection-name: ${MILVUS_COLLECTION:enterprise_rag_chunks}
+    collection-name: ${MILVUS_COLLECTION:enterprise_rag_chunks_v2}

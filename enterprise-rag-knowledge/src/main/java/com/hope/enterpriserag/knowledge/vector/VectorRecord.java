@@ -5,7 +5,7 @@ import java.util.List;
 
 /**
  * 写入向量数据库的子块记录。
- * 仅包含检索过滤和定位所需元数据，不携带文档正文。
+ * MySQL 中的子块正文是主数据；{@code content} 仅作为 Milvus BM25 分词和混合检索所需的冗余副本。
  */
 public record VectorRecord(
         Long chunkId,
@@ -24,6 +24,7 @@ public record VectorRecord(
         String allowedRoles,
         String sectionPath,
         Integer pageNumber,
+        String content,
         List<Float> embedding
 ) {
 }
