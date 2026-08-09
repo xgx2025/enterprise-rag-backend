@@ -78,6 +78,17 @@ rag:
     rerank-top-k: ${RAG_RETRIEVAL_RERANK_TOP_K:8}
     context-max-characters: ${RAG_RETRIEVAL_CONTEXT_MAX_CHARACTERS:12000}
     max-sources-per-document: ${RAG_RETRIEVAL_MAX_SOURCES_PER_DOCUMENT:2}
+  rerank:
+    model-enabled: ${RERANK_MODEL_ENABLED:false}
+    endpoint: ${RERANK_ENDPOINT:}
+    api-key: ${RERANK_API_KEY:}
+    model: ${RERANK_MODEL:qwen3-vl-rerank}
+    instruct: ${RERANK_INSTRUCT:Given a web search query, retrieve relevant passages that answer the query.}
+    fallback-enabled: ${RERANK_FALLBACK_ENABLED:true}
+    connect-timeout-millis: ${RERANK_CONNECT_TIMEOUT_MILLIS:5000}
+    request-timeout-millis: ${RERANK_REQUEST_TIMEOUT_MILLIS:60000}
+    max-attempts: ${RERANK_MAX_ATTEMPTS:3}
+    retry-delay-millis: ${RERANK_RETRY_DELAY_MILLIS:500}
   embedding:
     endpoint: ${EMBEDDING_ENDPOINT:}
     api-key: ${EMBEDDING_API_KEY:}

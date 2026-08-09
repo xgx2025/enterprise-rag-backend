@@ -1,7 +1,5 @@
 package com.hope.enterpriserag.knowledge.retrieval;
 
-import org.springframework.stereotype.Component;
-
 import java.util.Comparator;
 import java.util.List;
 
@@ -9,7 +7,6 @@ import java.util.List;
  * 无外部模型依赖的第一版重排器。
  * 综合父块词项覆盖、稠密相似度、RRF 分数和文档权威等级，后续可替换为交叉编码器。
  */
-@Component
 public class HeuristicReranker implements Reranker {
     @Override
     public List<RetrievedChunk> rerank(String query, List<RetrievedChunk> candidates) {
