@@ -17,5 +17,5 @@ public class MilvusProperties {
     /** Milvus 数据库名称。 */
     private String databaseName = "default";
     /** 保存企业文档子块向量的 Collection 名称。 */
-    private String collectionName = "enterprise_rag_chunks_v2";
+    private String collectionName = "enterprise_rag_chunks";
 }

@@ -92,4 +92,4 @@ rag:
     uri: ${MILVUS_URI:http://localhost:19530}
     token: ${MILVUS_TOKEN:}
     database-name: ${MILVUS_DATABASE:default}
-    collection-name: ${MILVUS_COLLECTION:enterprise_rag_chunks_v2}
+    collection-name: ${MILVUS_COLLECTION:enterprise_rag_chunks}
