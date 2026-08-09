@@ -1,4 +1,4 @@
-package com.hope.enterpriserag.common.exception;
+package com.hope.enterpriserag.security.exception;
 
 import lombok.Getter;
 

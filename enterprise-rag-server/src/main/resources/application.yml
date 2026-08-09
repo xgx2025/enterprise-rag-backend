@@ -5,6 +5,11 @@ spring:
   application:
     name: enterprise-rag-backend
 
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 55MB
+
   datasource:
     url: jdbc:mysql://localhost:3306/enterprise_rag_db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
     username: ${mysql_username}
@@ -51,3 +56,40 @@ jwt:
   refresh-token:
     secret: ${JWT_REFRESH_SECRET:your-refresh-token-secret-key-at-least-256-bits-long-for-hs256}
     expiration: 604800000
+
+aliyun:
+  oss:
+    enabled: ${OSS_ENABLED:false}
+    endpoint: ${OSS_ENDPOINT:}
+    region: ${OSS_REGION:}
+    bucket: ${OSS_BUCKET:}
+    object-prefix: ${OSS_OBJECT_PREFIX:enterprise-rag}
+    signed-url-expiration-minutes: ${OSS_SIGNED_URL_EXPIRATION_MINUTES:10}
+
+rag:
+  vectorization:
+    enabled: ${RAG_VECTORIZATION_ENABLED:false}
+    batch-size: ${RAG_VECTORIZATION_BATCH_SIZE:16}
+  retrieval:
+    dense-top-k: ${RAG_RETRIEVAL_DENSE_TOP_K:30}
+    sparse-top-k: ${RAG_RETRIEVAL_SPARSE_TOP_K:30}
+    fusion-top-k: ${RAG_RETRIEVAL_FUSION_TOP_K:20}
+    rrf-k: ${RAG_RETRIEVAL_RRF_K:60}
+    rerank-top-k: ${RAG_RETRIEVAL_RERANK_TOP_K:8}
+    context-max-characters: ${RAG_RETRIEVAL_CONTEXT_MAX_CHARACTERS:12000}
+    max-sources-per-document: ${RAG_RETRIEVAL_MAX_SOURCES_PER_DOCUMENT:2}
+  embedding:
+    endpoint: ${EMBEDDING_ENDPOINT:}
+    api-key: ${EMBEDDING_API_KEY:}
+    model: ${EMBEDDING_MODEL:}
+    dimensions: ${EMBEDDING_DIMENSIONS:1024}
+    send-dimensions: ${EMBEDDING_SEND_DIMENSIONS:false}
+    connect-timeout-millis: ${EMBEDDING_CONNECT_TIMEOUT_MILLIS:5000}
+    request-timeout-millis: ${EMBEDDING_REQUEST_TIMEOUT_MILLIS:60000}
+    max-attempts: ${EMBEDDING_MAX_ATTEMPTS:3}
+    retry-delay-millis: ${EMBEDDING_RETRY_DELAY_MILLIS:500}
+  milvus:
+    uri: ${MILVUS_URI:http://localhost:19530}
+    token: ${MILVUS_TOKEN:}
+    database-name: ${MILVUS_DATABASE:default}
+    collection-name: ${MILVUS_COLLECTION:enterprise_rag_chunks}

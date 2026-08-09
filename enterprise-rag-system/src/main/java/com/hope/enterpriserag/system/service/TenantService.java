@@ -3,6 +3,7 @@ package com.hope.enterpriserag.system.service;
 import cn.hutool.core.util.IdUtil;
 import com.hope.enterpriserag.system.entity.SysTenant;
 import com.hope.enterpriserag.system.mapper.SysTenantMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -13,13 +14,10 @@ import java.time.LocalDateTime;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class TenantService {
 
     private final SysTenantMapper tenantMapper;
-
-    public TenantService(SysTenantMapper tenantMapper) {
-        this.tenantMapper = tenantMapper;
-    }
 
     /** 创建新租户，自动填充雪花 ID 和时间字段 */
     public void create(SysTenant tenant) {

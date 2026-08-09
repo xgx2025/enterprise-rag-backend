@@ -19,6 +19,11 @@
     <dependencies>
         <dependency>
             <groupId>com.hope</groupId>
+            <artifactId>enterprise-rag-common</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.hope</groupId>
             <artifactId>enterprise-rag-system</artifactId>
         </dependency>
 
