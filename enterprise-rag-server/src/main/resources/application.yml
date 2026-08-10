@@ -70,6 +70,23 @@ rag:
   vectorization:
     enabled: ${RAG_VECTORIZATION_ENABLED:false}
     batch-size: ${RAG_VECTORIZATION_BATCH_SIZE:16}
+  chat:
+    enabled: ${RAG_CHAT_ENABLED:false}
+    minimum-evidence-score: ${RAG_CHAT_MINIMUM_EVIDENCE_SCORE:0.0}
+    max-question-characters: ${RAG_CHAT_MAX_QUESTION_CHARACTERS:2000}
+    max-history-messages: ${RAG_CHAT_MAX_HISTORY_MESSAGES:6}
+    delta-chunk-size: ${RAG_CHAT_DELTA_CHUNK_SIZE:24}
+    refusal-text: ${RAG_CHAT_REFUSAL_TEXT:当前知识库中没有足够的可靠依据回答该问题，请补充信息或联系相关负责人确认。}
+    model:
+      endpoint: ${CHAT_MODEL_ENDPOINT:}
+      api-key: ${CHAT_MODEL_API_KEY:}
+      model: ${CHAT_MODEL:}
+      temperature: ${CHAT_MODEL_TEMPERATURE:0.1}
+      max-tokens: ${CHAT_MODEL_MAX_TOKENS:1500}
+      connect-timeout-millis: ${CHAT_MODEL_CONNECT_TIMEOUT_MILLIS:5000}
+      request-timeout-millis: ${CHAT_MODEL_REQUEST_TIMEOUT_MILLIS:120000}
+      max-attempts: ${CHAT_MODEL_MAX_ATTEMPTS:2}
+      retry-delay-millis: ${CHAT_MODEL_RETRY_DELAY_MILLIS:500}
   retrieval:
     dense-top-k: ${RAG_RETRIEVAL_DENSE_TOP_K:30}
     sparse-top-k: ${RAG_RETRIEVAL_SPARSE_TOP_K:30}

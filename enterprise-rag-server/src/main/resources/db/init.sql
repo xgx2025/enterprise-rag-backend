@@ -133,6 +133,85 @@ CREATE TABLE IF NOT EXISTS kb_ingestion_task (
     KEY idx_task_tenant_status (tenant_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文档入库任务';
 
+CREATE TABLE IF NOT EXISTS chat_conversation (
+    id                  BIGINT UNSIGNED NOT NULL COMMENT '会话ID（雪花算法）',
+    tenant_id           BIGINT UNSIGNED NOT NULL COMMENT '租户ID',
+    user_id             BIGINT UNSIGNED NOT NULL COMMENT '会话所属用户ID',
+    title               VARCHAR(160) NOT NULL DEFAULT '新对话',
+    knowledge_base_ids  JSON NOT NULL COMMENT '知识库ID范围快照',
+    retrieval_strategy  JSON NOT NULL COMMENT '检索策略快照',
+    status              VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/DELETED',
+    created_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    KEY idx_chat_conversation_owner (tenant_id, user_id, status, updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='可信问答会话';
+
+CREATE TABLE IF NOT EXISTS chat_message (
+    id                  BIGINT UNSIGNED NOT NULL COMMENT '消息ID（雪花算法）',
+    tenant_id           BIGINT UNSIGNED NOT NULL COMMENT '租户ID',
+    conversation_id     BIGINT UNSIGNED NOT NULL COMMENT '会话ID',
+    parent_message_id   BIGINT UNSIGNED DEFAULT NULL COMMENT '助手消息对应的用户消息ID',
+    regenerated_from_id BIGINT UNSIGNED DEFAULT NULL COMMENT '被重新生成替代的助手消息ID',
+    role                VARCHAR(20) NOT NULL COMMENT 'USER/ASSISTANT',
+    content             MEDIUMTEXT NOT NULL,
+    status              VARCHAR(20) NOT NULL COMMENT 'RUNNING/COMPLETED/FAILED/CANCELLED/SUPERSEDED',
+    answer_status       VARCHAR(20) DEFAULT NULL COMMENT 'SUPPORTED/PARTIAL/INSUFFICIENT',
+    trace_id            VARCHAR(64) DEFAULT NULL,
+    error_code          VARCHAR(64) DEFAULT NULL,
+    error_message       VARCHAR(500) DEFAULT NULL,
+    retrieval_stats     JSON DEFAULT NULL,
+    created_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    KEY idx_chat_message_conversation (tenant_id, conversation_id, created_at),
+    KEY idx_chat_message_parent (parent_message_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='可信问答消息';
+
+CREATE TABLE IF NOT EXISTS chat_citation (
+    id                  BIGINT UNSIGNED NOT NULL COMMENT '引用ID（雪花算法）',
+    tenant_id           BIGINT UNSIGNED NOT NULL COMMENT '租户ID',
+    message_id          BIGINT UNSIGNED NOT NULL COMMENT '助手消息ID',
+    source_id           VARCHAR(20) NOT NULL COMMENT '回答内来源编号，如S1',
+    document_id         BIGINT UNSIGNED NOT NULL COMMENT '来源文档ID',
+    title               VARCHAR(256) NOT NULL,
+    version             VARCHAR(64) DEFAULT NULL,
+    effective_date      DATE DEFAULT NULL,
+    section_path        VARCHAR(500) DEFAULT NULL,
+    page_number         INT DEFAULT NULL,
+    quote               MEDIUMTEXT NOT NULL COMMENT '实际进入回答上下文的引文快照',
+    security_level      TINYINT NOT NULL DEFAULT 1,
+    score               DOUBLE NOT NULL DEFAULT 0,
+    created_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_chat_citation_source (message_id, source_id),
+    KEY idx_chat_citation_document (tenant_id, document_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='回答引用快照';
+
+CREATE TABLE IF NOT EXISTS chat_trace (
+    id                  BIGINT UNSIGNED NOT NULL COMMENT 'Trace记录ID（雪花算法）',
+    trace_id            VARCHAR(64) NOT NULL COMMENT '检索链路Trace ID',
+    tenant_id           BIGINT UNSIGNED NOT NULL,
+    user_id             BIGINT UNSIGNED NOT NULL,
+    conversation_id     BIGINT UNSIGNED NOT NULL,
+    user_message_id     BIGINT UNSIGNED NOT NULL,
+    assistant_message_id BIGINT UNSIGNED NOT NULL,
+    knowledge_base_ids  JSON NOT NULL,
+    retrieval_strategy  JSON NOT NULL,
+    retrieval_stats     JSON NOT NULL,
+    retrieval_timing    JSON NOT NULL,
+    model               VARCHAR(128) NOT NULL,
+    answer_status       VARCHAR(20) NOT NULL,
+    prompt_tokens       INT UNSIGNED NOT NULL DEFAULT 0,
+    completion_tokens   INT UNSIGNED NOT NULL DEFAULT 0,
+    total_tokens        INT UNSIGNED NOT NULL DEFAULT 0,
+    created_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_chat_trace_id (trace_id),
+    UNIQUE KEY uk_chat_trace_message (assistant_message_id),
+    KEY idx_chat_trace_owner (tenant_id, user_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='可信问答检索与生成Trace';
+
 -- 失败信息只属于当前失败态，清理早期版本因 null 更新策略遗留的历史错误提示。
 UPDATE kb_document
 SET failure_stage = NULL,

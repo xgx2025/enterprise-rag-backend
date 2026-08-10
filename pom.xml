@@ -23,6 +23,7 @@
         <module>enterprise-rag-system</module>
         <module>enterprise-rag-security</module>
         <module>enterprise-rag-knowledge</module>
+        <module>enterprise-rag-chat</module>
         <module>enterprise-rag-server</module>
     </modules>
 
@@ -58,6 +59,11 @@
             <dependency>
                 <groupId>com.hope</groupId>
                 <artifactId>enterprise-rag-knowledge</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.hope</groupId>
+                <artifactId>enterprise-rag-chat</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

@@ -10,11 +10,15 @@ import org.springframework.scheduling.annotation.EnableAsync;
  * Enterprise RAG 后端启动类。
  * <p>
  * 自动扫描 {@code com.hope.enterpriserag} 包下所有组件，
- * MyBatis-Plus Mapper 同时扫描系统主数据和知识业务的持久化包。
+ * MyBatis-Plus Mapper 同时扫描系统主数据、知识业务和可信问答的持久化包。
  */
 @Slf4j
 @EnableAsync
-@MapperScan({"com.hope.enterpriserag.system.mapper", "com.hope.enterpriserag.knowledge.mapper"})
+@MapperScan({
+        "com.hope.enterpriserag.system.mapper",
+        "com.hope.enterpriserag.knowledge.mapper",
+        "com.hope.enterpriserag.chat.mapper"
+})
 @SpringBootApplication(scanBasePackages = "com.hope.enterpriserag")
 public class EnterpriseRagBackendApplication {
 

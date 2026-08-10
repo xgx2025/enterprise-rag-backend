@@ -37,6 +37,11 @@
             <artifactId>enterprise-rag-knowledge</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>com.hope</groupId>
+            <artifactId>enterprise-rag-chat</artifactId>
+        </dependency>
+
         <!-- Keep Hutool on the executable module's runtime classpath. -->
         <dependency>
             <groupId>cn.hutool</groupId>
