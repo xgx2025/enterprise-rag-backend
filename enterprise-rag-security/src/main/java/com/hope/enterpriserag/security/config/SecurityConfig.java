@@ -1,5 +1,7 @@
 package com.hope.enterpriserag.security.config;
 
+import jakarta.servlet.DispatcherType;
+
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -42,6 +44,8 @@ public class SecurityConfig {
                 .authenticationEntryPoint((request, response, exception) ->
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED)))
             .authorizeHttpRequests(auth -> auth
+                // SSE 完成会触发容器内部 ASYNC 派发；初始 REQUEST 仍必须通过 JWT。
+                .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 .requestMatchers(HttpMethod.POST,
                     "/auth/login", "/auth/register", "/auth/send-code",
                     "/auth/reset-password", "/auth/refresh")
