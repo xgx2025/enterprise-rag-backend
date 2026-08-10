@@ -12,16 +12,18 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class OpenAiCompatibleChatModelTest {
+class SpringAiChatModelTest {
     private HttpServer server;
 
     @AfterEach
     void tearDown() {
-        if (server != null) server.stop(0);
+        if (server != null) {
+            server.stop(0);
+        }
     }
 
     @Test
-    void shouldSendOpenAiCompatibleRequestAndParseUsage() throws IOException {
+    void shouldDelegateOpenAiCompatibleRequestToSpringAiAndMapUsage() throws IOException {
         AtomicReference<String> authorization = new AtomicReference<>();
         AtomicReference<String> requestBody = new AtomicReference<>();
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -29,7 +31,8 @@ class OpenAiCompatibleChatModelTest {
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
             requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] body = """
-                    {"choices":[{"message":{"content":"可信回答。[S1]"}}],
+                    {"id":"chatcmpl-test","object":"chat.completion","created":1,"model":"test-model",
+                     "choices":[{"index":0,"message":{"role":"assistant","content":"可信回答。[S1]"},"finish_reason":"stop"}],
                      "usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}
                     """.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -40,12 +43,18 @@ class OpenAiCompatibleChatModelTest {
         server.start();
 
         ChatModelProperties properties = properties();
-        OpenAiCompatibleChatModel model = new OpenAiCompatibleChatModel(properties);
+        SpringAiChatModel model = new SpringAiChatModel(properties);
         ChatModelResult result = model.generate(new ChatModelPrompt("system rule", "question and evidence"));
 
         assertThat(authorization.get()).isEqualTo("Bearer test-secret");
-        assertThat(requestBody.get()).contains("test-model", "system rule", "question and evidence", "\"stream\":false");
+        assertThat(requestBody.get()).contains("test-model", "system rule", "question and evidence");
         assertThat(result).isEqualTo(new ChatModelResult("可信回答。[S1]", 11, 7, 18));
+    }
+
+    @Test
+    void shouldDeriveBaseUrlFromFullCompletionsEndpoint() {
+        assertThat(SpringAiChatModel.baseUrl("https://example.com/compatible-mode/v1/chat/completions/",
+                "/chat/completions")).isEqualTo("https://example.com/compatible-mode/v1");
     }
 
     private ChatModelProperties properties() {
@@ -53,7 +62,6 @@ class OpenAiCompatibleChatModelTest {
         properties.setEndpoint("http://127.0.0.1:" + server.getAddress().getPort() + "/chat/completions");
         properties.setApiKey("test-secret");
         properties.setModel("test-model");
-        properties.setConnectTimeoutMillis(2_000);
         properties.setRequestTimeoutMillis(2_000);
         properties.setMaxAttempts(1);
         return properties;

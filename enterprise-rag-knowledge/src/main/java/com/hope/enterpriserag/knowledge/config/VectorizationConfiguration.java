@@ -1,7 +1,7 @@
 package com.hope.enterpriserag.knowledge.config;
 
 import com.hope.enterpriserag.knowledge.embedding.EmbeddingService;
-import com.hope.enterpriserag.knowledge.embedding.OpenAiCompatibleEmbeddingService;
+import com.hope.enterpriserag.knowledge.embedding.SpringAiEmbeddingService;
 import com.hope.enterpriserag.knowledge.retrieval.HeuristicReranker;
 import com.hope.enterpriserag.knowledge.retrieval.Qwen3VlReranker;
 import com.hope.enterpriserag.knowledge.retrieval.Reranker;
@@ -9,6 +9,8 @@ import com.hope.enterpriserag.knowledge.vector.MilvusVectorStore;
 import com.hope.enterpriserag.knowledge.vector.VectorStore;
 import io.milvus.v2.client.ConnectConfig;
 import io.milvus.v2.client.MilvusClientV2;
+import io.micrometer.observation.ObservationRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -32,11 +34,13 @@ import java.net.URI;
 })
 public class VectorizationConfiguration {
 
-    /** 创建 OpenAI 协议兼容的 Embedding 服务适配器。 */
+    /** 创建由 Spring AI 管理 OpenAI 兼容协议的 Embedding 服务适配器。 */
     @Bean
-    public EmbeddingService embeddingService(EmbeddingProperties properties) {
+    public EmbeddingService embeddingService(EmbeddingProperties properties,
+                                             ObjectProvider<ObservationRegistry> observationRegistryProvider) {
         validateEmbedding(properties);
-        return new OpenAiCompatibleEmbeddingService(properties);
+        ObservationRegistry registry = observationRegistryProvider.getIfAvailable(() -> ObservationRegistry.NOOP);
+        return new SpringAiEmbeddingService(properties, registry);
     }
 
     /** 创建 Milvus Java SDK 客户端；容器关闭时同步释放连接。 */
@@ -88,13 +92,27 @@ public class VectorizationConfiguration {
         if (!StringUtils.hasText(properties.getModel())) {
             throw new IllegalStateException("rag.embedding.model 不能为空");
         }
+        URI endpoint;
+        try {
+            endpoint = URI.create(properties.getEndpoint().trim());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("rag.embedding.endpoint 格式无效", e);
+        }
+        if (!endpoint.isAbsolute() || !("https".equalsIgnoreCase(endpoint.getScheme())
+                || "http".equalsIgnoreCase(endpoint.getScheme()))) {
+            throw new IllegalStateException("rag.embedding.endpoint 必须是完整的 HTTP(S) 地址");
+        }
+        if (endpoint.getPath() == null || !endpoint.getPath().replaceAll("/+$", "")
+                .endsWith("/embeddings")) {
+            throw new IllegalStateException("rag.embedding.endpoint 必须以 /embeddings 结尾");
+        }
         if (properties.getDimensions() <= 1) {
             throw new IllegalStateException("rag.embedding.dimensions 必须大于 1");
         }
-        if (properties.getConnectTimeoutMillis() <= 0 || properties.getRequestTimeoutMillis() <= 0) {
+        if (properties.getRequestTimeoutMillis() <= 0) {
             throw new IllegalStateException("Embedding HTTP 超时时间必须大于 0");
         }
-        if (properties.getMaxAttempts() <= 0 || properties.getRetryDelayMillis() < 0) {
+        if (properties.getMaxAttempts() <= 0) {
             throw new IllegalStateException("Embedding 重试配置无效");
         }
     }

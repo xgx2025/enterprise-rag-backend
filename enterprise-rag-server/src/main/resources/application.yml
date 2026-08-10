@@ -83,10 +83,8 @@ rag:
       model: ${CHAT_MODEL:}
       temperature: ${CHAT_MODEL_TEMPERATURE:0.1}
       max-tokens: ${CHAT_MODEL_MAX_TOKENS:1500}
-      connect-timeout-millis: ${CHAT_MODEL_CONNECT_TIMEOUT_MILLIS:5000}
       request-timeout-millis: ${CHAT_MODEL_REQUEST_TIMEOUT_MILLIS:120000}
       max-attempts: ${CHAT_MODEL_MAX_ATTEMPTS:2}
-      retry-delay-millis: ${CHAT_MODEL_RETRY_DELAY_MILLIS:500}
   retrieval:
     dense-top-k: ${RAG_RETRIEVAL_DENSE_TOP_K:30}
     sparse-top-k: ${RAG_RETRIEVAL_SPARSE_TOP_K:30}
@@ -112,10 +110,8 @@ rag:
     model: ${EMBEDDING_MODEL:}
     dimensions: ${EMBEDDING_DIMENSIONS:1024}
     send-dimensions: ${EMBEDDING_SEND_DIMENSIONS:false}
-    connect-timeout-millis: ${EMBEDDING_CONNECT_TIMEOUT_MILLIS:5000}
     request-timeout-millis: ${EMBEDDING_REQUEST_TIMEOUT_MILLIS:60000}
     max-attempts: ${EMBEDDING_MAX_ATTEMPTS:3}
-    retry-delay-millis: ${EMBEDDING_RETRY_DELAY_MILLIS:500}
   milvus:
     uri: ${MILVUS_URI:http://localhost:19530}
     token: ${MILVUS_TOKEN:}

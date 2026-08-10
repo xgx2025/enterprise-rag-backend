@@ -49,6 +49,10 @@
             <groupId>io.milvus</groupId>
             <artifactId>milvus-sdk-java</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-openai</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>com.google.code.gson</groupId>

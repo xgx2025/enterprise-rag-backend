@@ -14,7 +14,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-class OpenAiCompatibleEmbeddingServiceTests {
+class SpringAiEmbeddingServiceTests {
     private HttpServer server;
 
     @AfterEach
@@ -25,14 +25,14 @@ class OpenAiCompatibleEmbeddingServiceTests {
     }
 
     @Test
-    void restoresEmbeddingOrderUsingResponseIndexes() throws IOException {
+    void restoresEmbeddingOrderUsingSpringAiResponseIndexes() throws IOException {
         startServer("""
-                {"data":[
-                  {"index":1,"embedding":[0.4,0.5,0.6]},
-                  {"index":0,"embedding":[0.1,0.2,0.3]}
-                ]}
+                {"object":"list","model":"test-embedding","data":[
+                  {"object":"embedding","index":1,"embedding":[0.4,0.5,0.6]},
+                  {"object":"embedding","index":0,"embedding":[0.1,0.2,0.3]}
+                ],"usage":{"prompt_tokens":2,"total_tokens":2}}
                 """);
-        OpenAiCompatibleEmbeddingService service = new OpenAiCompatibleEmbeddingService(properties(3));
+        SpringAiEmbeddingService service = new SpringAiEmbeddingService(properties(3));
 
         List<List<Float>> result = service.embed(List.of("第一段", "第二段"));
 
@@ -43,11 +43,19 @@ class OpenAiCompatibleEmbeddingServiceTests {
     @Test
     void rejectsVectorWhoseDimensionDoesNotMatchCollectionConfiguration() throws IOException {
         startServer("""
-                {"data":[{"index":0,"embedding":[0.1,0.2]}]}
+                {"object":"list","model":"test-embedding","data":[
+                  {"object":"embedding","index":0,"embedding":[0.1,0.2]}
+                ],"usage":{"prompt_tokens":1,"total_tokens":1}}
                 """);
-        OpenAiCompatibleEmbeddingService service = new OpenAiCompatibleEmbeddingService(properties(3));
+        SpringAiEmbeddingService service = new SpringAiEmbeddingService(properties(3));
 
         assertThrows(EmbeddingException.class, () -> service.embed(List.of("测试文本")));
+    }
+
+    @Test
+    void derivesBaseUrlFromFullEmbeddingEndpoint() {
+        assertEquals("https://example.com/compatible-mode/v1",
+                SpringAiEmbeddingService.baseUrl("https://example.com/compatible-mode/v1/embeddings/"));
     }
 
     private void startServer(String responseBody) throws IOException {
@@ -71,7 +79,6 @@ class OpenAiCompatibleEmbeddingServiceTests {
         properties.setModel("test-embedding");
         properties.setDimensions(dimensions);
         properties.setMaxAttempts(1);
-        properties.setConnectTimeoutMillis(1_000);
         properties.setRequestTimeoutMillis(2_000);
         return properties;
     }

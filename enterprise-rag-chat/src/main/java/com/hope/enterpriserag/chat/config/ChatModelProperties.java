@@ -4,7 +4,7 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * OpenAI Chat Completions 兼容模型配置。
+ * Spring AI OpenAI Chat Completions 兼容模型配置。
  * API Key 必须通过环境变量或部署平台 Secret 注入，不得写入源码和日志。
  */
 @Data
@@ -20,12 +20,8 @@ public class ChatModelProperties {
     private double temperature = 0.1;
     /** 单次回答最大输出 Token。 */
     private int maxTokens = 1_500;
-    /** HTTP 连接超时，单位为毫秒。 */
-    private int connectTimeoutMillis = 5_000;
-    /** 单次生成请求超时，单位为毫秒。 */
+    /** Spring AI 单次生成请求总超时，单位为毫秒。 */
     private int requestTimeoutMillis = 120_000;
-    /** 408、429、5xx 或网络异常的最大尝试次数。 */
+    /** 包含首次请求在内的最大尝试次数，传给 Spring AI 时换算为最大重试次数。 */
     private int maxAttempts = 2;
-    /** 指数退避基础等待时间，单位为毫秒。 */
-    private long retryDelayMillis = 500;
 }
