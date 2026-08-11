@@ -67,15 +67,23 @@ aliyun:
     signed-url-expiration-minutes: ${OSS_SIGNED_URL_EXPIRATION_MINUTES:10}
 
 rag:
+  ingestion:
+    recovery:
+      enabled: ${RAG_INGESTION_RECOVERY_ENABLED:true}
+      scan-interval-millis: ${RAG_INGESTION_RECOVERY_SCAN_INTERVAL_MILLIS:60000}
+      stale-minutes: ${RAG_INGESTION_RECOVERY_STALE_MINUTES:30}
+      batch-size: ${RAG_INGESTION_RECOVERY_BATCH_SIZE:50}
   vectorization:
     enabled: ${RAG_VECTORIZATION_ENABLED:false}
     batch-size: ${RAG_VECTORIZATION_BATCH_SIZE:16}
   chat:
     enabled: ${RAG_CHAT_ENABLED:false}
-    minimum-evidence-score: ${RAG_CHAT_MINIMUM_EVIDENCE_SCORE:0.0}
+    minimum-evidence-score: ${RAG_CHAT_MINIMUM_EVIDENCE_SCORE:0.35}
     max-question-characters: ${RAG_CHAT_MAX_QUESTION_CHARACTERS:2000}
     max-history-messages: ${RAG_CHAT_MAX_HISTORY_MESSAGES:6}
     delta-chunk-size: ${RAG_CHAT_DELTA_CHUNK_SIZE:24}
+    stream-timeout-millis: ${RAG_CHAT_STREAM_TIMEOUT_MILLIS:300000}
+    heartbeat-interval-millis: ${RAG_CHAT_HEARTBEAT_INTERVAL_MILLIS:15000}
     refusal-text: ${RAG_CHAT_REFUSAL_TEXT:当前知识库中没有足够的可靠依据回答该问题，请补充信息或联系相关负责人确认。}
     model:
       endpoint: ${CHAT_MODEL_ENDPOINT:}

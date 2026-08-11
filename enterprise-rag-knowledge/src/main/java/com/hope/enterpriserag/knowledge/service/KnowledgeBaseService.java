@@ -9,6 +9,7 @@ import com.hope.enterpriserag.knowledge.entity.KnowledgeBase;
 import com.hope.enterpriserag.knowledge.entity.KnowledgeDocument;
 import com.hope.enterpriserag.knowledge.mapper.KnowledgeBaseMapper;
 import com.hope.enterpriserag.knowledge.mapper.KnowledgeDocumentMapper;
+import com.hope.enterpriserag.knowledge.retrieval.RetrievalAccessContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,25 +29,45 @@ public class KnowledgeBaseService {
     private final KnowledgeDocumentMapper documentMapper;
 
     /**
-     * 查询租户知识库。
-     *
-     * @param tenantId       当前租户 ID
-     * @param includeDisabled 是否包含已停用知识库
-     * @return 按更新时间倒序排列的知识库列表
+     * 查询当前用户可访问的知识库。普通用户只能看到活动且不高于许可等级的数据，
+     * 知识管理员可以按需查看停用数据。
      */
-    public List<KnowledgeBaseResponse> list(Long tenantId, boolean includeDisabled) {
+    public List<KnowledgeBaseResponse> listAccessible(RetrievalAccessContext access, boolean includeDisabled) {
+        if (access == null || access.tenantId() == null || access.userId() == null) {
+            throw new BusinessException(401, "用户认证信息无效");
+        }
+        boolean administrator = isAdministrator(access);
         LambdaQueryWrapper<KnowledgeBase> query = new LambdaQueryWrapper<KnowledgeBase>()
-                .eq(KnowledgeBase::getTenantId, tenantId)
+                .eq(KnowledgeBase::getTenantId, access.tenantId())
+                .le(KnowledgeBase::getSecurityLevel, access.maximumSecurityLevel())
                 .orderByDesc(KnowledgeBase::getUpdatedAt);
-        if (!includeDisabled) {
+        if (!administrator || !includeDisabled) {
             query.eq(KnowledgeBase::getStatus, "ACTIVE");
         }
         return knowledgeBaseMapper.selectList(query).stream().map(this::toResponse).toList();
     }
 
+    private boolean isAdministrator(RetrievalAccessContext access) {
+        return access != null && (access.roles().contains("ROLE_KB_ADMIN")
+                || access.roles().contains("KB_ADMIN"));
+    }
+
+    private void requireAdministrator(RetrievalAccessContext access) {
+        if (access == null || access.tenantId() == null || access.userId() == null) {
+            throw new BusinessException(401, "用户认证信息无效");
+        }
+        if (!isAdministrator(access)) {
+            log.warn("知识库治理操作被拒绝: tenantId={}, userId={}", access.tenantId(), access.userId());
+            throw new BusinessException(403, "没有知识库治理权限");
+        }
+    }
+
     /** 创建租户内名称唯一的知识库。 */
     @Transactional
-    public KnowledgeBaseResponse create(Long tenantId, Long userId, KnowledgeBaseCommand command) {
+    public KnowledgeBaseResponse create(RetrievalAccessContext access, KnowledgeBaseCommand command) {
+        requireAdministrator(access);
+        Long tenantId = access.tenantId();
+        Long userId = access.userId();
         ensureUniqueName(tenantId, command.name().trim(), null);
         LocalDateTime now = LocalDateTime.now();
         KnowledgeBase knowledgeBase = new KnowledgeBase();
@@ -68,7 +89,9 @@ public class KnowledgeBaseService {
 
     /** 更新属于当前租户的知识库基础信息。 */
     @Transactional
-    public KnowledgeBaseResponse update(Long tenantId, Long id, KnowledgeBaseCommand command) {
+    public KnowledgeBaseResponse update(RetrievalAccessContext access, Long id, KnowledgeBaseCommand command) {
+        requireAdministrator(access);
+        Long tenantId = access.tenantId();
         KnowledgeBase knowledgeBase = requireOwned(tenantId, id);
         ensureUniqueName(tenantId, command.name().trim(), id);
         knowledgeBase.setName(command.name().trim());
@@ -84,7 +107,9 @@ public class KnowledgeBaseService {
 
     /** 更新知识库状态；仍有生效文档时不允许停用。 */
     @Transactional
-    public void updateStatus(Long tenantId, Long id, String status) {
+    public void updateStatus(RetrievalAccessContext access, Long id, String status) {
+        requireAdministrator(access);
+        Long tenantId = access.tenantId();
         KnowledgeBase knowledgeBase = requireOwned(tenantId, id);
         if ("DISABLED".equals(status)) {
             long activeDocuments = documentMapper.selectCount(new LambdaQueryWrapper<KnowledgeDocument>()

@@ -2,10 +2,12 @@ package com.hope.enterpriserag.system.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.Set;
 
 /**
  * 系统用户实体，映射 {@code sys_user} 表。
@@ -31,6 +33,17 @@ public class User {
     private String phone;
     /** 状态：1-启用 0-禁用 */
     private Integer status;
+    /**
+     * 服务端从用户访问配置加载的角色集合，不映射到 {@code sys_user} 表。
+     * 该字段只在认证阶段填充，客户端和 JWT 声明均不能覆盖。
+     */
+    @TableField(exist = false)
+    private Set<String> roles;
+    /**
+     * 服务端从用户访问配置加载的最高知识安全等级，范围为 1 至 3。
+     */
+    @TableField(exist = false)
+    private Integer maximumSecurityLevel;
     /** 创建时间 */
     private LocalDateTime createdAt;
     /** 最后更新时间 */

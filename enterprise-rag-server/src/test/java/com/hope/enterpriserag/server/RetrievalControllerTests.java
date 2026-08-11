@@ -5,6 +5,7 @@ import com.hope.enterpriserag.knowledge.retrieval.RetrievalCommand;
 import com.hope.enterpriserag.knowledge.service.RetrievalService;
 import com.hope.enterpriserag.server.controller.knowledge.RetrievalController;
 import com.hope.enterpriserag.server.dto.knowledge.RetrievalRequest;
+import com.hope.enterpriserag.server.support.ChatAccessContextFactory;
 import com.hope.enterpriserag.system.entity.User;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -25,7 +26,7 @@ class RetrievalControllerTests {
     void derivesTenantRolesAndPublicSecurityLevelOnlyFromAuthentication() {
         RetrievalService service = mock(RetrievalService.class);
         when(service.retrieve(any(), any())).thenReturn(null);
-        RetrievalController controller = new RetrievalController(service);
+        RetrievalController controller = new RetrievalController(service, new ChatAccessContextFactory());
         User user = new User();
         user.setId(99L);
         user.setTenantId(10L);

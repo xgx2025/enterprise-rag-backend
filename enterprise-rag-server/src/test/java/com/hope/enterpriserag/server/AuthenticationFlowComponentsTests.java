@@ -7,6 +7,7 @@ import com.hope.enterpriserag.system.entity.User;
 import com.hope.enterpriserag.common.exception.BusinessException;
 import com.hope.enterpriserag.system.mapper.SysTenantMapper;
 import com.hope.enterpriserag.system.mapper.UserMapper;
+import com.hope.enterpriserag.system.mapper.UserAccessProfileMapper;
 import com.hope.enterpriserag.security.service.EmailService;
 import com.hope.enterpriserag.system.service.TenantService;
 import com.hope.enterpriserag.system.service.UserService;
@@ -37,6 +38,8 @@ class AuthenticationFlowComponentsTests {
     private SysTenantMapper tenantMapper;
     @Mock
     private UserMapper userMapper;
+    @Mock
+    private UserAccessProfileMapper userAccessProfileMapper;
     @Mock
     private UserService userService;
     @Mock
@@ -127,7 +130,7 @@ class AuthenticationFlowComponentsTests {
 
     @Test
     void userServiceAssignsUniqueHutoolIds() {
-        UserService service = new UserService(userMapper);
+        UserService service = new UserService(userMapper, userAccessProfileMapper);
         User first = new User();
         User second = new User();
 

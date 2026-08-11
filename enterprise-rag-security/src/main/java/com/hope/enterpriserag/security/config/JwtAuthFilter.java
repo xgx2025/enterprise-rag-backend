@@ -18,7 +18,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
+import java.util.Set;
 
 /**
  * JWT 认证过滤器，在每个请求中从 Authorization 头提取 Bearer Token，
@@ -48,10 +48,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 User user = userService.getById(userId);
 
                 if (user != null && user.getStatus() != null && user.getStatus() == 1) {
+                    userService.loadAccessProfile(user);
+                    Set<String> roles = user.getRoles() == null || user.getRoles().isEmpty()
+                            ? Set.of("ROLE_USER") : user.getRoles();
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(
                                     user, null,
-                                    List.of(new SimpleGrantedAuthority("ROLE_USER")));
+                                    roles.stream().map(SimpleGrantedAuthority::new).toList());
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                     log.debug("JWT认证成功: userId={}, requestUri={}", userId, request.getRequestURI());
                 } else {

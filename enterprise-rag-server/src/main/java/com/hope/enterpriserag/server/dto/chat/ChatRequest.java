@@ -20,8 +20,14 @@ public record ChatRequest(
         List<String> knowledgeBaseIds,
         RetrievalStrategyRequest strategy,
         @Min(1) @Max(20) Integer topK,
-        @Min(1000) @Max(30000) Integer contextMaxCharacters
+        @Min(1000) @Max(30000) Integer contextMaxCharacters,
+        @Size(max = 64) String requestId
 ) {
+    /** 兼容未携带幂等键的内部构造。 */
+    public ChatRequest(String query, String conversationId, List<String> knowledgeBaseIds,
+                       RetrievalStrategyRequest strategy, Integer topK, Integer contextMaxCharacters) {
+        this(query, conversationId, knowledgeBaseIds, strategy, topK, contextMaxCharacters, null);
+    }
     /** 转换为与 Web 框架无关的 Chat 业务命令。 */
     public ChatCommand toCommand() {
         RetrievalStrategyRequest effective = strategy == null
@@ -31,7 +37,18 @@ public record ChatRequest(
         }
         return new ChatCommand(query.trim(), parseId(conversationId, "会话 ID"), parseKnowledgeBaseIds(),
                 effective.denseEnabled(), effective.sparseEnabled(), effective.rerankEnabled(),
-                topK, contextMaxCharacters);
+                topK, contextMaxCharacters, normalizeRequestId());
+    }
+
+    private String normalizeRequestId() {
+        if (requestId == null || requestId.isBlank()) {
+            return null;
+        }
+        String value = requestId.trim();
+        if (!value.matches("[A-Za-z0-9_-]{8,64}")) {
+            throw new BusinessException("请求幂等键格式无效");
+        }
+        return value;
     }
 
     private List<Long> parseKnowledgeBaseIds() {

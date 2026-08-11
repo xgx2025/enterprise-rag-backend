@@ -13,6 +13,14 @@ public record ChatCommand(
         boolean sparseEnabled,
         boolean rerankEnabled,
         Integer resultLimit,
-        Integer contextMaxCharacters
+        Integer contextMaxCharacters,
+        String requestId
 ) {
+    /** 兼容内部调用和既有测试的无幂等键构造器。 */
+    public ChatCommand(String query, Long conversationId, List<Long> knowledgeBaseIds,
+                       boolean denseEnabled, boolean sparseEnabled, boolean rerankEnabled,
+                       Integer resultLimit, Integer contextMaxCharacters) {
+        this(query, conversationId, knowledgeBaseIds, denseEnabled, sparseEnabled, rerankEnabled,
+                resultLimit, contextMaxCharacters, null);
+    }
 }

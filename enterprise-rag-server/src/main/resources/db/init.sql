@@ -37,6 +37,30 @@ CREATE TABLE IF NOT EXISTS sys_user (
   DEFAULT CHARSET = utf8mb4
   COMMENT = '系统用户表';
 
+CREATE TABLE IF NOT EXISTS sys_user_access (
+    user_id                 BIGINT UNSIGNED NOT NULL COMMENT '用户ID',
+    tenant_id               BIGINT UNSIGNED NOT NULL COMMENT '所属租户ID',
+    roles                   VARCHAR(512) NOT NULL DEFAULT 'ROLE_USER' COMMENT '服务端角色编码，逗号分隔',
+    maximum_security_level  TINYINT NOT NULL DEFAULT 1 COMMENT '最高知识安全等级：1公开 2内部 3机密',
+    created_at              DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at              DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (user_id),
+    KEY idx_user_access_tenant (tenant_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户知识访问配置';
+
+-- 为升级前已有用户补齐最小权限；固定种子管理员 ID 获得知识治理权限。
+INSERT IGNORE INTO sys_user_access (user_id, tenant_id, roles, maximum_security_level)
+SELECT id, tenant_id, 'ROLE_USER', 1 FROM sys_user;
+
+INSERT INTO sys_user_access (user_id, tenant_id, roles, maximum_security_level)
+SELECT id, tenant_id, 'ROLE_USER,ROLE_KB_ADMIN', 3
+FROM sys_user
+WHERE id = 2085198999769886720
+ON DUPLICATE KEY UPDATE
+    tenant_id = VALUES(tenant_id),
+    roles = 'ROLE_USER,ROLE_KB_ADMIN',
+    maximum_security_level = 3;
+
 ALTER TABLE sys_user
     MODIFY COLUMN id BIGINT UNSIGNED NOT NULL COMMENT '用户ID（Hutool 雪花算法生成）';
 
@@ -118,7 +142,7 @@ CREATE TABLE IF NOT EXISTS kb_ingestion_task (
     id                  BIGINT UNSIGNED NOT NULL COMMENT '任务ID',
     tenant_id           BIGINT UNSIGNED NOT NULL,
     document_id         BIGINT UNSIGNED NOT NULL,
-    task_type           VARCHAR(32) NOT NULL DEFAULT 'PARSE_AND_CHUNK' COMMENT 'PARSE_AND_CHUNK/VECTORIZE',
+    task_type           VARCHAR(32) NOT NULL DEFAULT 'PARSE_AND_CHUNK' COMMENT 'PARSE_AND_CHUNK/VECTORIZE/REINDEX_*',
     status              VARCHAR(20) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/WAITING_VECTOR/RUNNING/SUCCEEDED/FAILED',
     progress            TINYINT UNSIGNED NOT NULL DEFAULT 0,
     current_stage       VARCHAR(64) DEFAULT NULL,
@@ -211,6 +235,17 @@ CREATE TABLE IF NOT EXISTS chat_trace (
     UNIQUE KEY uk_chat_trace_message (assistant_message_id),
     KEY idx_chat_trace_owner (tenant_id, user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='可信问答检索与生成Trace';
+
+CREATE TABLE IF NOT EXISTS chat_request_claim (
+    id                  BIGINT UNSIGNED NOT NULL COMMENT '幂等占位ID',
+    tenant_id           BIGINT UNSIGNED NOT NULL,
+    user_id             BIGINT UNSIGNED NOT NULL,
+    request_id          VARCHAR(64) NOT NULL COMMENT '客户端请求幂等键',
+    created_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_chat_request_owner (tenant_id, user_id, request_id),
+    KEY idx_chat_request_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Chat请求幂等占位';
 
 -- 失败信息只属于当前失败态，清理早期版本因 null 更新策略遗留的历史错误提示。
 UPDATE kb_document

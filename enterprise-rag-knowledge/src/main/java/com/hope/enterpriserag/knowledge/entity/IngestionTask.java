@@ -20,7 +20,7 @@ public class IngestionTask {
     private Long tenantId;
     /** 待处理文档 ID。 */
     private Long documentId;
-    /** 任务类型：完整入库使用 {@code PARSE_AND_CHUNK}，向量化阶段重试使用 {@code VECTORIZE}。 */
+    /** 任务类型：{@code PARSE_AND_CHUNK}、{@code VECTORIZE} 或携带恢复状态的 {@code REINDEX_*}。 */
     private String taskType;
     /** 任务状态，例如 {@code PENDING}、{@code WAITING_VECTOR}、{@code RUNNING}、{@code SUCCEEDED}、{@code FAILED}。 */
     private String status;

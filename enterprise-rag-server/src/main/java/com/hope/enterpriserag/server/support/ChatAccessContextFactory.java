@@ -15,8 +15,6 @@ import java.util.Set;
  */
 @Component
 public class ChatAccessContextFactory {
-    private static final int DEFAULT_USER_SECURITY_LEVEL = 1;
-
     /** 根据当前用户和 Spring Security 权限创建不可提升的访问上下文。 */
     public RetrievalAccessContext create(User user, Authentication authentication) {
         Set<String> roles = new LinkedHashSet<>();
@@ -29,7 +27,15 @@ public class ChatAccessContextFactory {
                 }
             }
         }
+        int maximumSecurityLevel = user.getMaximumSecurityLevel() == null
+                ? 1 : Math.max(1, Math.min(3, user.getMaximumSecurityLevel()));
         return new RetrievalAccessContext(user.getTenantId(), user.getId(), Set.copyOf(roles),
-                DEFAULT_USER_SECURITY_LEVEL);
+                maximumSecurityLevel);
+    }
+
+    /** 判断当前访问上下文是否具备知识库治理权限。 */
+    public boolean isKnowledgeAdministrator(RetrievalAccessContext access) {
+        return access != null && (access.roles().contains("ROLE_KB_ADMIN")
+                || access.roles().contains("KB_ADMIN"));
     }
 }

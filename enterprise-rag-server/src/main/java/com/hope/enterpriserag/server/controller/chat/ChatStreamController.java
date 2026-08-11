@@ -7,6 +7,7 @@ import com.hope.enterpriserag.chat.generation.ChatCancelledException;
 import com.hope.enterpriserag.chat.generation.ChatProgressEvent;
 import com.hope.enterpriserag.chat.generation.ChatProgressListener;
 import com.hope.enterpriserag.chat.service.ChatApplicationService;
+import com.hope.enterpriserag.chat.config.ChatProperties;
 import com.hope.enterpriserag.common.exception.BusinessException;
 import com.hope.enterpriserag.knowledge.retrieval.RetrievalAccessContext;
 import com.hope.enterpriserag.server.dto.chat.ChatRequest;
@@ -16,6 +17,7 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -29,6 +31,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledFuture;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -39,11 +43,11 @@ import java.util.concurrent.atomic.AtomicReference;
 @RequestMapping("/chat")
 @ConditionalOnProperty(prefix = "rag.chat", name = "enabled", havingValue = "true")
 public class ChatStreamController {
-    private static final long SSE_TIMEOUT_MILLIS = 180_000L;
-
     private final ChatApplicationService chatService;
     private final ChatAccessContextFactory accessFactory;
     private final AsyncTaskExecutor taskExecutor;
+    private final TaskScheduler heartbeatScheduler;
+    private final ChatProperties properties;
     private final Gson gson = new Gson();
 
     /**
@@ -51,10 +55,14 @@ public class ChatStreamController {
      */
     public ChatStreamController(ChatApplicationService chatService,
                                 ChatAccessContextFactory accessFactory,
-                                @Qualifier("chatTaskExecutor") AsyncTaskExecutor taskExecutor) {
+                                @Qualifier("chatTaskExecutor") AsyncTaskExecutor taskExecutor,
+                                @Qualifier("chatHeartbeatScheduler") TaskScheduler heartbeatScheduler,
+                                ChatProperties properties) {
         this.chatService = chatService;
         this.accessFactory = accessFactory;
         this.taskExecutor = taskExecutor;
+        this.heartbeatScheduler = heartbeatScheduler;
+        this.properties = properties;
     }
 
     /** 流式执行新问题。 */
@@ -89,27 +97,45 @@ public class ChatStreamController {
     }
 
     private SseEmitter start(StreamingOperation operation) {
-        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
+        SseEmitter emitter = new SseEmitter(Math.max(30_000L, properties.getStreamTimeoutMillis()));
         ChatCancellationToken token = new ChatCancellationToken();
         AtomicBoolean terminal = new AtomicBoolean();
+        AtomicBoolean terminalEventEmitted = new AtomicBoolean();
         AtomicReference<Future<?>> futureReference = new AtomicReference<>();
-        ChatProgressListener listener = event -> send(emitter, token, event);
+        AtomicReference<ScheduledFuture<?>> heartbeatReference = new AtomicReference<>();
+        ChatProgressListener listener = event -> {
+            if ("message.done".equals(event.type()) || "message.cancelled".equals(event.type())
+                    || "message.error".equals(event.type())) {
+                terminalEventEmitted.set(true);
+            }
+            send(emitter, token, event);
+        };
 
         Future<?> future = taskExecutor.submit(() -> {
             try {
                 operation.execute(listener, token);
             } catch (ChatCancelledException ignored) {
                 // 业务层已持久化 CANCELLED；连接通常已经关闭。
-            } catch (RuntimeException e) {
-                safeSend(emitter, new ChatProgressEvent("message.error", Map.of(
-                        "code", "CHAT_STREAM_FAILED",
-                        "message", "回答生成失败，请稍后重试")));
+            } catch (RuntimeException ignored) {
+                if (!terminalEventEmitted.get()) {
+                    safeSend(emitter, new ChatProgressEvent("message.error", Map.of(
+                            "code", "CHAT_STREAM_FAILED",
+                            "message", "回答请求失败，请检查参数或稍后重试")));
+                }
             } finally {
                 terminal.set(true);
+                cancelHeartbeat(heartbeatReference.get());
                 emitter.complete();
             }
         });
         futureReference.set(future);
+        ScheduledFuture<?> heartbeat = heartbeatScheduler.scheduleAtFixedRate(
+                () -> sendHeartbeat(emitter, token, futureReference, terminal),
+                Duration.ofMillis(Math.max(5_000L, properties.getHeartbeatIntervalMillis())));
+        heartbeatReference.set(heartbeat);
+        if (terminal.get()) {
+            cancelHeartbeat(heartbeat);
+        }
 
         Runnable cancel = () -> {
             if (!terminal.get()) {
@@ -118,12 +144,35 @@ public class ChatStreamController {
                 if (running != null) {
                     running.cancel(true);
                 }
+                cancelHeartbeat(heartbeatReference.get());
             }
         };
         emitter.onCompletion(cancel);
         emitter.onTimeout(cancel);
         emitter.onError(error -> cancel.run());
         return emitter;
+    }
+
+    private void sendHeartbeat(SseEmitter emitter, ChatCancellationToken token,
+                               AtomicReference<Future<?>> futureReference, AtomicBoolean terminal) {
+        if (terminal.get()) {
+            return;
+        }
+        try {
+            emitter.send(SseEmitter.event().comment("heartbeat"));
+        } catch (IOException | IllegalStateException e) {
+            token.cancel();
+            Future<?> running = futureReference.get();
+            if (running != null) {
+                running.cancel(true);
+            }
+        }
+    }
+
+    private void cancelHeartbeat(ScheduledFuture<?> heartbeat) {
+        if (heartbeat != null) {
+            heartbeat.cancel(false);
+        }
     }
 
     private void send(SseEmitter emitter, ChatCancellationToken token, ChatProgressEvent event) {

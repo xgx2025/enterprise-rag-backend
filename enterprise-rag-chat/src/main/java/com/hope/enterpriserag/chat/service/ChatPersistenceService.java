@@ -13,12 +13,14 @@ import com.hope.enterpriserag.chat.dto.ConversationResponse;
 import com.hope.enterpriserag.chat.entity.ChatCitation;
 import com.hope.enterpriserag.chat.entity.ChatConversation;
 import com.hope.enterpriserag.chat.entity.ChatMessage;
+import com.hope.enterpriserag.chat.entity.ChatRequestClaim;
 import com.hope.enterpriserag.chat.entity.ChatTrace;
 import com.hope.enterpriserag.chat.generation.ChatTurn;
 import com.hope.enterpriserag.chat.generation.GroundedAnswer;
 import com.hope.enterpriserag.chat.mapper.ChatCitationMapper;
 import com.hope.enterpriserag.chat.mapper.ChatConversationMapper;
 import com.hope.enterpriserag.chat.mapper.ChatMessageMapper;
+import com.hope.enterpriserag.chat.mapper.ChatRequestClaimMapper;
 import com.hope.enterpriserag.chat.mapper.ChatTraceMapper;
 import com.hope.enterpriserag.common.exception.BusinessException;
 import com.hope.enterpriserag.knowledge.dto.RetrievalStatsResponse;
@@ -28,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.lang.reflect.Type;
 import java.time.LocalDateTime;
@@ -53,6 +56,7 @@ public class ChatPersistenceService {
     private final ChatMessageMapper messageMapper;
     private final ChatCitationMapper citationMapper;
     private final ChatTraceMapper traceMapper;
+    private final ChatRequestClaimMapper requestClaimMapper;
     private final Gson gson = new Gson();
 
     /** 创建空会话，后续首次提问会更新标题、知识库范围和检索策略。 */
@@ -110,8 +114,10 @@ public class ChatPersistenceService {
     /** 创建用户消息与 RUNNING 助手占位消息。 */
     @Transactional
     public ChatTurnState beginTurn(RetrievalAccessContext access, ChatCommand command) {
+        claimRequest(access, command.requestId());
         ChatConversation conversation = command.conversationId() == null
-                ? newConversation(access) : requireConversation(access, command.conversationId());
+                ? newConversation(access) : requireConversationForUpdate(access, command.conversationId());
+        ensureNoRunningTurn(access, conversation.getId());
         LocalDateTime now = LocalDateTime.now();
         conversation.setKnowledgeBaseIds(gson.toJson(safeIds(command.knowledgeBaseIds())));
         conversation.setRetrievalStrategy(strategyJson(command));
@@ -129,7 +135,8 @@ public class ChatPersistenceService {
         messageMapper.insert(assistantMessage);
         ChatCommand effectiveCommand = new ChatCommand(command.query(), conversation.getId(),
                 safeIds(command.knowledgeBaseIds()), command.denseEnabled(), command.sparseEnabled(),
-                command.rerankEnabled(), command.resultLimit(), command.contextMaxCharacters());
+                command.rerankEnabled(), command.resultLimit(), command.contextMaxCharacters(),
+                command.requestId());
         return new ChatTurnState(conversation.getId(), userMessage.getId(), assistantMessage.getId(),
                 effectiveCommand);
     }
@@ -148,7 +155,8 @@ public class ChatPersistenceService {
         if (failedOnly && !("FAILED".equals(previous.getStatus()) || "CANCELLED".equals(previous.getStatus()))) {
             throw new BusinessException("只有失败或已取消的回答可以重试");
         }
-        ChatConversation conversation = requireConversation(access, previous.getConversationId());
+        ChatConversation conversation = requireConversationForUpdate(access, previous.getConversationId());
+        ensureNoRunningTurn(access, conversation.getId());
         ChatMessage userMessage = messageMapper.selectById(previous.getParentMessageId());
         if (userMessage == null || !access.tenantId().equals(userMessage.getTenantId())
                 || !conversation.getId().equals(userMessage.getConversationId())) {
@@ -165,7 +173,7 @@ public class ChatPersistenceService {
         Strategy strategy = parseStrategy(conversation.getRetrievalStrategy());
         ChatCommand command = new ChatCommand(userMessage.getContent(), conversation.getId(),
                 parseIds(conversation.getKnowledgeBaseIds()), strategy.dense(), strategy.sparse(),
-                strategy.rerank(), strategy.resultLimit(), strategy.contextMaxCharacters());
+                true, strategy.resultLimit(), strategy.contextMaxCharacters(), null);
         return new ChatTurnState(conversation.getId(), userMessage.getId(), replacement.getId(), command);
     }
 
@@ -268,6 +276,50 @@ public class ChatPersistenceService {
             throw new BusinessException(404, "会话不存在");
         }
         return conversation;
+    }
+
+    private ChatConversation requireConversationForUpdate(RetrievalAccessContext access, Long conversationId) {
+        if (conversationId == null) {
+            throw new BusinessException(404, "会话不存在");
+        }
+        ChatConversation conversation = conversationMapper.selectOne(new LambdaQueryWrapper<ChatConversation>()
+                .eq(ChatConversation::getId, conversationId)
+                .eq(ChatConversation::getTenantId, access.tenantId())
+                .eq(ChatConversation::getUserId, access.userId())
+                .eq(ChatConversation::getStatus, "ACTIVE")
+                .last("FOR UPDATE"));
+        if (conversation == null) {
+            throw new BusinessException(404, "会话不存在");
+        }
+        return conversation;
+    }
+
+    private void ensureNoRunningTurn(RetrievalAccessContext access, Long conversationId) {
+        long running = messageMapper.selectCount(new LambdaQueryWrapper<ChatMessage>()
+                .eq(ChatMessage::getTenantId, access.tenantId())
+                .eq(ChatMessage::getConversationId, conversationId)
+                .eq(ChatMessage::getRole, "ASSISTANT")
+                .eq(ChatMessage::getStatus, "RUNNING"));
+        if (running > 0) {
+            throw new BusinessException(409, "当前会话已有回答正在生成");
+        }
+    }
+
+    private void claimRequest(RetrievalAccessContext access, String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return;
+        }
+        ChatRequestClaim claim = new ChatRequestClaim();
+        claim.setId(IdUtil.getSnowflakeNextId());
+        claim.setTenantId(access.tenantId());
+        claim.setUserId(access.userId());
+        claim.setRequestId(requestId);
+        claim.setCreatedAt(LocalDateTime.now());
+        try {
+            requestClaimMapper.insert(claim);
+        } catch (DuplicateKeyException e) {
+            throw new BusinessException(409, "该请求已提交，请刷新会话查看结果");
+        }
     }
 
     private ChatMessage requireAssistantMessage(RetrievalAccessContext access, Long messageId) {

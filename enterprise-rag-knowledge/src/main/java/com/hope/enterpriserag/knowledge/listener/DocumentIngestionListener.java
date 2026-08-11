@@ -2,6 +2,7 @@ package com.hope.enterpriserag.knowledge.listener;
 
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.hope.enterpriserag.knowledge.entity.DocumentChunk;
 import com.hope.enterpriserag.knowledge.entity.IngestionTask;
 import com.hope.enterpriserag.knowledge.entity.KnowledgeDocument;
@@ -53,19 +54,26 @@ public class DocumentIngestionListener {
      *
      * @param event 包含文档 ID 和摄取任务 ID 的领域事件
      */
-    @Async
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async("ingestionTaskExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void process(DocumentUploadedEvent event) {
         long startedAt = System.nanoTime();
         KnowledgeDocument document = documentMapper.selectById(event.documentId());
         IngestionTask task = taskMapper.selectById(event.taskId());
-        if (document == null || task == null || document.getDeleted() == 1) {
-            log.warn("跳过文档解析任务-资源不存在或已归档: documentId={}, taskId={}, documentExists={}, taskExists={}",
+        if (document == null || task == null || document.getDeleted() == 1
+                || !document.getId().equals(task.getDocumentId())
+                || !document.getTenantId().equals(task.getTenantId())) {
+            log.warn("跳过文档解析任务-资源不存在、已归档或任务归属不一致: documentId={}, taskId={}, documentExists={}, taskExists={}",
                     event.documentId(), event.taskId(), document != null, task != null);
             return;
         }
 
         try {
+            if (!claimTask(task)) {
+                log.warn("跳过重复或已失效的文档解析事件: tenantId={}, documentId={}, taskId={}, taskStatus={}",
+                        document.getTenantId(), document.getId(), task.getId(), task.getStatus());
+                return;
+            }
             log.info("文档解析任务开始: tenantId={}, documentId={}, taskId={}, retryCount={}",
                     document.getTenantId(), document.getId(), task.getId(), task.getRetryCount());
             updateTask(task, "RUNNING", 10, "DOWNLOAD", null, false);
@@ -85,6 +93,7 @@ public class DocumentIngestionListener {
 
             updateTask(task, "RUNNING", 45, "CHUNKING", null, false);
             chunkMapper.delete(new LambdaQueryWrapper<DocumentChunk>()
+                    .eq(DocumentChunk::getTenantId, document.getTenantId())
                     .eq(DocumentChunk::getDocumentId, document.getId()));
 
             int chunkIndex = 0;
@@ -120,6 +129,29 @@ public class DocumentIngestionListener {
             log.error("文档解析失败: tenantId={}, documentId={}, taskId={}, elapsedMs={}, error={}",
                     document.getTenantId(), document.getId(), task.getId(), elapsedMillis(startedAt), message, e);
         }
+    }
+
+    private boolean claimTask(IngestionTask task) {
+        LocalDateTime now = LocalDateTime.now();
+        int updated = taskMapper.update(null, new UpdateWrapper<IngestionTask>()
+                .eq("id", task.getId())
+                .eq("tenant_id", task.getTenantId())
+                .eq("document_id", task.getDocumentId())
+                .eq("status", "PENDING")
+                .set("status", "RUNNING")
+                .set("progress", 5)
+                .set("current_stage", "CLAIMED")
+                .set("started_at", now)
+                .set("updated_at", now));
+        if (updated == 1) {
+            task.setStatus("RUNNING");
+            task.setProgress(5);
+            task.setCurrentStage("CLAIMED");
+            task.setStartedAt(now);
+            task.setUpdatedAt(now);
+            return true;
+        }
+        return false;
     }
 
     private long elapsedMillis(long startedAt) {

@@ -21,7 +21,8 @@ public class HeuristicReranker implements Reranker {
     private double score(String query, RetrievedChunk candidate, double maximumFusion) {
         String content = candidate.parentContent() == null ? candidate.childContent() : candidate.parentContent();
         double lexical = RetrievalTextAnalyzer.lexicalScore(query, content);
-        double dense = Math.max(0.0, Math.min(1.0, (candidate.denseScore() + 1.0) / 2.0));
+        // COSINE 为 0 表示没有相似性；稀疏检索关闭 Dense 时也使用 0，不能得到额外奖励。
+        double dense = Math.max(0.0, Math.min(1.0, candidate.denseScore()));
         double fusion = maximumFusion <= 0 ? 0.0 : candidate.fusionScore() / maximumFusion;
         double authority = candidate.authorityLevel() == null ? 0.0
                 : Math.max(0.0, Math.min(1.0, candidate.authorityLevel() / 3.0));

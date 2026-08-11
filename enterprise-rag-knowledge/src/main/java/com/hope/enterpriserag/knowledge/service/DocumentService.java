@@ -21,6 +21,7 @@ import com.hope.enterpriserag.knowledge.mapper.DocumentChunkMapper;
 import com.hope.enterpriserag.knowledge.mapper.IngestionTaskMapper;
 import com.hope.enterpriserag.knowledge.mapper.KnowledgeDocumentMapper;
 import com.hope.enterpriserag.knowledge.storage.ObjectStorageService;
+import com.hope.enterpriserag.knowledge.retrieval.RetrievalAccessContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -58,9 +59,11 @@ public class DocumentService {
     private final ApplicationEventPublisher eventPublisher;
 
     /** 按治理属性和关键词分页查询当前租户的未归档文档。 */
-    public PaginatedResult<DocumentResponse> list(Long tenantId, String status, String department,
+    public PaginatedResult<DocumentResponse> list(RetrievalAccessContext access, String status, String department,
                                                    Long knowledgeBaseId, String keyword,
                                                    long page, long pageSize) {
+        requireAdministrator(access);
+        Long tenantId = access.tenantId();
         long safePage = Math.max(1, page);
         long safePageSize = Math.max(1, Math.min(100, pageSize));
         LambdaQueryWrapper<KnowledgeDocument> query = new LambdaQueryWrapper<KnowledgeDocument>()
@@ -87,8 +90,9 @@ public class DocumentService {
     }
 
     /** 查询属于当前租户的单个文档。 */
-    public DocumentResponse get(Long tenantId, Long id) {
-        return toResponse(requireOwned(tenantId, id));
+    public DocumentResponse get(RetrievalAccessContext access, Long id) {
+        requireAdministrator(access);
+        return toResponse(requireOwned(access.tenantId(), id));
     }
 
     /**
@@ -96,8 +100,11 @@ public class DocumentService {
      * 数据库写入失败时会尽力清理已上传的 OSS 对象。
      */
     @Transactional
-    public DocumentResponse upload(Long tenantId, Long userId, DocumentUploadFile file,
+    public DocumentResponse upload(RetrievalAccessContext access, DocumentUploadFile file,
                                    DocumentUploadCommand command) {
+        requireAdministrator(access);
+        Long tenantId = access.tenantId();
+        Long userId = access.userId();
         validateUpload(file, command);
         knowledgeBaseService.requireActive(tenantId, command.knowledgeBaseId());
         validateReplacement(tenantId, command);
@@ -173,7 +180,9 @@ public class DocumentService {
 
     /** 发布文档或将已发布文档设为失效，并处理版本替代关系。 */
     @Transactional
-    public void updateStatus(Long tenantId, Long id, String targetStatus) {
+    public void updateStatus(RetrievalAccessContext access, Long id, String targetStatus) {
+        requireAdministrator(access);
+        Long tenantId = access.tenantId();
         KnowledgeDocument document = requireOwned(tenantId, id);
         String previousStatus = document.getStatus();
         String target = targetStatus.toUpperCase(Locale.ROOT);
@@ -216,7 +225,9 @@ public class DocumentService {
 
     /** 逻辑归档非生效文档，保留 OSS 原文件以满足审计和恢复需求。 */
     @Transactional
-    public void archive(Long tenantId, Long id) {
+    public void archive(RetrievalAccessContext access, Long id) {
+        requireAdministrator(access);
+        Long tenantId = access.tenantId();
         KnowledgeDocument document = requireOwned(tenantId, id);
         if ("ACTIVE".equals(document.getStatus())) {
             throw new BusinessException("已生效文档不能直接删除，请先设为失效");
@@ -232,7 +243,9 @@ public class DocumentService {
 
     /** 根据失败阶段重新提交解析任务或仅重跑向量化，避免无意义地重复下载原文件。 */
     @Transactional
-    public void retry(Long tenantId, Long id) {
+    public void retry(RetrievalAccessContext access, Long id) {
+        requireAdministrator(access);
+        Long tenantId = access.tenantId();
         KnowledgeDocument document = requireOwnedForUpdate(tenantId, id);
         if (!"FAILED".equals(document.getStatus())) {
             throw new BusinessException("仅处理失败的文档可以重试");
@@ -287,7 +300,9 @@ public class DocumentService {
      * 成功后恢复调用前的文档生命周期状态，适用于 Collection schema 升级和索引修复。
      */
     @Transactional
-    public void reindex(Long tenantId, Long id) {
+    public void reindex(RetrievalAccessContext access, Long id) {
+        requireAdministrator(access);
+        Long tenantId = access.tenantId();
         KnowledgeDocument document = requireOwnedForUpdate(tenantId, id);
         String completionStatus = document.getStatus();
         if (!Set.of("READY", "ACTIVE", "EXPIRED").contains(completionStatus)
@@ -317,7 +332,7 @@ public class DocumentService {
                 .isNotNull("parent_chunk_id")
                 .set("embedding_status", "PENDING"));
 
-        IngestionTask task = createTask(document, retryCount, "REINDEX", "WAITING_VECTOR", 70,
+        IngestionTask task = createTask(document, retryCount, "REINDEX_" + completionStatus, "WAITING_VECTOR", 70,
                 "EMBEDDING_PENDING");
         taskMapper.insert(task);
         eventPublisher.publishEvent(new DocumentVectorizationEvent(id, task.getId(), completionStatus));
@@ -326,7 +341,9 @@ public class DocumentService {
     }
 
     /** 查询当前租户文档的全部父子分块。 */
-    public List<DocumentChunkResponse> chunks(Long tenantId, Long documentId) {
+    public List<DocumentChunkResponse> chunks(RetrievalAccessContext access, Long documentId) {
+        requireAdministrator(access);
+        Long tenantId = access.tenantId();
         requireOwned(tenantId, documentId);
         return chunkMapper.selectList(new LambdaQueryWrapper<DocumentChunk>()
                         .eq(DocumentChunk::getTenantId, tenantId)
@@ -336,7 +353,9 @@ public class DocumentService {
     }
 
     /** 生成当前租户文档原文件的短期只读访问地址。 */
-    public ObjectAccessResponse previewUrl(Long tenantId, Long id) {
+    public ObjectAccessResponse previewUrl(RetrievalAccessContext access, Long id) {
+        requireAdministrator(access);
+        Long tenantId = access.tenantId();
         KnowledgeDocument document = requireOwned(tenantId, id);
         var expiration = storageService.readUrlExpiration();
         log.info("生成文档临时预览地址: tenantId={}, documentId={}, expirationMinutes={}",
@@ -350,7 +369,7 @@ public class DocumentService {
      *
      * @throws BusinessException 文档不存在、已归档或不属于当前租户
      */
-    public KnowledgeDocument requireOwned(Long tenantId, Long id) {
+    private KnowledgeDocument requireOwned(Long tenantId, Long id) {
         KnowledgeDocument document = documentMapper.selectOne(new LambdaQueryWrapper<KnowledgeDocument>()
                 .eq(KnowledgeDocument::getId, id)
                 .eq(KnowledgeDocument::getTenantId, tenantId)
@@ -360,6 +379,16 @@ public class DocumentService {
             throw new BusinessException(404, "文档不存在");
         }
         return document;
+    }
+
+    private void requireAdministrator(RetrievalAccessContext access) {
+        if (access == null || access.tenantId() == null || access.userId() == null) {
+            throw new BusinessException(401, "用户认证信息无效");
+        }
+        if (!(access.roles().contains("ROLE_KB_ADMIN") || access.roles().contains("KB_ADMIN"))) {
+            log.warn("知识文档治理操作被拒绝: tenantId={}, userId={}", access.tenantId(), access.userId());
+            throw new BusinessException(403, "没有知识库治理权限");
+        }
     }
 
     /** 在写事务中锁定当前租户文档，防止并发重试创建多个摄取任务。 */

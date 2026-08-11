@@ -4,11 +4,13 @@ import com.hope.enterpriserag.chat.command.ChatCommand;
 import com.hope.enterpriserag.chat.entity.ChatConversation;
 import com.hope.enterpriserag.chat.entity.ChatMessage;
 import com.hope.enterpriserag.chat.entity.ChatTrace;
+import com.hope.enterpriserag.chat.entity.ChatRequestClaim;
 import com.hope.enterpriserag.chat.generation.AnswerStatus;
 import com.hope.enterpriserag.chat.generation.GroundedAnswer;
 import com.hope.enterpriserag.chat.mapper.ChatCitationMapper;
 import com.hope.enterpriserag.chat.mapper.ChatConversationMapper;
 import com.hope.enterpriserag.chat.mapper.ChatMessageMapper;
+import com.hope.enterpriserag.chat.mapper.ChatRequestClaimMapper;
 import com.hope.enterpriserag.chat.mapper.ChatTraceMapper;
 import com.hope.enterpriserag.knowledge.dto.RetrievalResponse;
 import com.hope.enterpriserag.knowledge.dto.RetrievalStatsResponse;
@@ -16,6 +18,8 @@ import com.hope.enterpriserag.knowledge.retrieval.RetrievalAccessContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DuplicateKeyException;
+import com.hope.enterpriserag.common.exception.BusinessException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -23,6 +27,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -34,12 +39,14 @@ class ChatPersistenceServiceTest {
     private final ChatMessageMapper messageMapper = mock(ChatMessageMapper.class);
     private final ChatCitationMapper citationMapper = mock(ChatCitationMapper.class);
     private final ChatTraceMapper traceMapper = mock(ChatTraceMapper.class);
+    private final ChatRequestClaimMapper requestClaimMapper = mock(ChatRequestClaimMapper.class);
     private final RetrievalAccessContext access = new RetrievalAccessContext(10L, 20L, Set.of("USER"), 1);
     private ChatPersistenceService service;
 
     @BeforeEach
     void setUp() {
-        service = new ChatPersistenceService(conversationMapper, messageMapper, citationMapper, traceMapper);
+        service = new ChatPersistenceService(conversationMapper, messageMapper, citationMapper, traceMapper,
+                requestClaimMapper);
     }
 
     @Test
@@ -81,6 +88,34 @@ class ChatPersistenceServiceTest {
         assertThat(replacement.getStatus()).isEqualTo("COMPLETED");
         assertThat(previous.getStatus()).isEqualTo("SUPERSEDED");
         verify(traceMapper).insert(any(ChatTrace.class));
+    }
+
+    @Test
+    void shouldRejectSecondRunningTurnInSameConversation() {
+        when(conversationMapper.selectOne(any())).thenReturn(conversation());
+        when(messageMapper.selectCount(any())).thenReturn(1L);
+        ChatCommand command = new ChatCommand("问题", 100L, List.of(200L),
+                true, true, true, 8, 12_000);
+
+        assertThatThrownBy(() -> service.beginTurn(access, command))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("正在生成");
+
+        verify(messageMapper, never()).insert(any(ChatMessage.class));
+    }
+
+    @Test
+    void shouldRejectDuplicateRequestIdBeforeCreatingMessages() {
+        when(requestClaimMapper.insert(any(ChatRequestClaim.class)))
+                .thenThrow(new DuplicateKeyException("duplicate"));
+        ChatCommand command = new ChatCommand("问题", 100L, List.of(200L),
+                true, true, true, 8, 12_000, "request_12345678");
+
+        assertThatThrownBy(() -> service.beginTurn(access, command))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已提交");
+
+        verify(conversationMapper, never()).selectOne(any());
     }
 
     private ChatConversation conversation() {

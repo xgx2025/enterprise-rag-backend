@@ -40,4 +40,21 @@ class CitationValidatorTest {
         assertThat(result.valid()).isFalse();
         assertThat(result.reason()).isEqualTo("CITATION_OUT_OF_SCOPE");
     }
+
+    @Test
+    void shouldRejectFabricatedClaimEvenWhenCitationIdExists() {
+        CitationValidationResult result = validator.validate("深圳住宿上限为 1000000 元。[S1]", sources);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).isEqualTo("CLAIM_NOT_SUPPORTED");
+    }
+
+    @Test
+    void shouldRejectUncitedSecondClaim() {
+        CitationValidationResult result = validator.validate(
+                "深圳住宿上限为 500 元。[S1]\n所有员工还可领取额外补贴。", sources);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).isEqualTo("CLAIM_CITATION_MISSING");
+    }
 }

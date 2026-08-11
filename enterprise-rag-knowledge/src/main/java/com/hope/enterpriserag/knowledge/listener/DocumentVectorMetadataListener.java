@@ -33,7 +33,7 @@ public class DocumentVectorMetadataListener {
     private final VectorStore vectorStore;
 
     /** 在数据库状态提交后更新或删除对应文档的 Milvus 记录。 */
-    @Async
+    @Async("vectorizationTaskExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void process(DocumentVectorMetadataEvent event) {
         try {

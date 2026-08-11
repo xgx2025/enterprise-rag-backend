@@ -9,6 +9,7 @@ import com.hope.enterpriserag.knowledge.dto.RetrievalResponse;
 import com.hope.enterpriserag.knowledge.dto.RetrievalSourceResponse;
 import com.hope.enterpriserag.knowledge.dto.RetrievalStatsResponse;
 import com.hope.enterpriserag.knowledge.retrieval.RetrievalAccessContext;
+import com.hope.enterpriserag.knowledge.retrieval.RetrievalCommand;
 import com.hope.enterpriserag.knowledge.service.RetrievalService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -82,6 +83,21 @@ class GroundedAnswerServiceTest {
         assertThat(answer.status()).isEqualTo(AnswerStatus.INSUFFICIENT);
         assertThat(answer.content()).isEqualTo("证据不足，无法回答。");
         assertThat(answer.citations()).isEmpty();
+    }
+
+    @Test
+    void shouldRewriteReferentialFollowUpForRetrievalOnly() {
+        ChatCommand followUp = new ChatCommand("那上海呢？", null, List.of(10L),
+                true, true, true, 8, 12_000);
+        when(retrievalService.retrieve(any(), any())).thenReturn(retrievalWith(source("S1", 0.92)));
+        when(chatModel.generate(any())).thenReturn(new ChatModelResult("深圳住宿上限为 500 元。[S1]", 30, 12, 42));
+        ArgumentCaptor<RetrievalCommand> retrievalCommand = ArgumentCaptor.forClass(RetrievalCommand.class);
+
+        service.answer(access, followUp, List.of(new ChatTurn("USER", "深圳住宿标准是多少？")),
+                null, null);
+
+        verify(retrievalService).retrieve(any(), retrievalCommand.capture());
+        assertThat(retrievalCommand.getValue().query()).contains("深圳住宿标准是多少", "那上海呢");
     }
 
     private RetrievalResponse retrievalWith(RetrievalSourceResponse... sources) {

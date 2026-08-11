@@ -7,6 +7,7 @@ import com.hope.enterpriserag.knowledge.mapper.DocumentChunkMapper;
 import com.hope.enterpriserag.knowledge.mapper.IngestionTaskMapper;
 import com.hope.enterpriserag.knowledge.mapper.KnowledgeDocumentMapper;
 import com.hope.enterpriserag.knowledge.storage.ObjectStorageService;
+import com.hope.enterpriserag.knowledge.retrieval.RetrievalAccessContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -23,8 +24,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class DocumentServiceTests {
+    private static final RetrievalAccessContext ADMIN_ACCESS =
+            new RetrievalAccessContext(10L, 99L, java.util.Set.of("ROLE_KB_ADMIN"), 3);
     private KnowledgeDocumentMapper documentMapper;
     private DocumentChunkMapper chunkMapper;
     private IngestionTaskMapper taskMapper;
@@ -55,7 +59,7 @@ class DocumentServiceTests {
         document.setEmbeddingStatus("COMPLETED");
         when(documentMapper.selectOne(any())).thenReturn(document);
 
-        documentService.updateStatus(10L, 100L, "ACTIVE");
+        documentService.updateStatus(ADMIN_ACCESS, 100L, "ACTIVE");
 
         assertEquals("ACTIVE", document.getStatus());
         verify(documentMapper).updateById(document);
@@ -66,7 +70,7 @@ class DocumentServiceTests {
         KnowledgeDocument document = document("ACTIVE");
         when(documentMapper.selectOne(any())).thenReturn(document);
 
-        assertThrows(BusinessException.class, () -> documentService.archive(10L, 100L));
+        assertThrows(BusinessException.class, () -> documentService.archive(ADMIN_ACCESS, 100L));
 
         verify(documentMapper, never()).updateById(any(KnowledgeDocument.class));
     }
@@ -80,7 +84,7 @@ class DocumentServiceTests {
         when(storageService.generateReadUrl(document.getObjectKey(), Duration.ofMinutes(10)))
                 .thenReturn("https://example.oss-cn-hangzhou.aliyuncs.com/signed");
 
-        var result = documentService.previewUrl(10L, 100L);
+        var result = documentService.previewUrl(ADMIN_ACCESS, 100L);
 
         assertEquals("https://example.oss-cn-hangzhou.aliyuncs.com/signed", result.url());
     }
@@ -96,7 +100,7 @@ class DocumentServiceTests {
         when(taskMapper.selectCount(any())).thenReturn(1L);
         when(chunkMapper.selectCount(any())).thenReturn(2L);
 
-        documentService.retry(10L, 100L);
+        documentService.retry(ADMIN_ACCESS, 100L);
 
         verify(chunkMapper, never()).delete(any());
         assertEquals("PROCESSING", document.getStatus());
@@ -120,7 +124,7 @@ class DocumentServiceTests {
         when(chunkMapper.selectCount(any())).thenReturn(3L);
         when(taskMapper.selectCount(any())).thenReturn(2L);
 
-        documentService.reindex(10L, 100L);
+        documentService.reindex(ADMIN_ACCESS, 100L);
 
         assertEquals("PROCESSING", document.getStatus());
         assertEquals("PENDING", document.getEmbeddingStatus());
@@ -131,6 +135,16 @@ class DocumentServiceTests {
         verify(eventPublisher).publishEvent(eventCaptor.capture());
         assertEquals(100L, eventCaptor.getValue().documentId());
         assertEquals("ACTIVE", eventCaptor.getValue().completionStatus());
+    }
+
+    @Test
+    void rejectsDocumentContentAccessWithoutKnowledgeAdministratorRole() {
+        RetrievalAccessContext userAccess = new RetrievalAccessContext(10L, 88L,
+                java.util.Set.of("ROLE_USER"), 1);
+
+        assertThrows(BusinessException.class, () -> documentService.chunks(userAccess, 100L));
+
+        verifyNoInteractions(documentMapper, chunkMapper);
     }
 
     private KnowledgeDocument document(String status) {

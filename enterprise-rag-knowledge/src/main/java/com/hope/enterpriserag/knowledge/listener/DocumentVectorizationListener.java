@@ -50,7 +50,7 @@ public class DocumentVectorizationListener {
      * 在分块事务提交后批量生成向量并写入 Milvus。
      * 使用文档级先删后 Upsert 策略清理重新解析产生的旧分块，保证手工重试幂等。
      */
-    @Async
+    @Async("vectorizationTaskExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void process(DocumentVectorizationEvent event) {
         long startedAt = System.nanoTime();

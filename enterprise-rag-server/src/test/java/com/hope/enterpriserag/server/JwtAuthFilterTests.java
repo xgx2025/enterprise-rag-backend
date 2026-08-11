@@ -55,4 +55,29 @@ class JwtAuthFilterTests {
         assertSame(user, authentication.getPrincipal());
         assertEquals("ROLE_USER", authentication.getAuthorities().iterator().next().getAuthority());
     }
+
+    @Test
+    void serverLoadedKnowledgeRolesShouldBecomeAuthorities() throws Exception {
+        JwtUtil jwtUtil = mock(JwtUtil.class);
+        UserService userService = mock(UserService.class);
+        Claims claims = mock(Claims.class);
+        User user = new User();
+        user.setId(101L);
+        user.setTenantId(10L);
+        user.setStatus(1);
+        user.setRoles(java.util.Set.of("ROLE_USER", "ROLE_KB_ADMIN"));
+        user.setMaximumSecurityLevel(3);
+        when(jwtUtil.validateAccessToken("admin-token")).thenReturn(true);
+        when(jwtUtil.parseAccessToken("admin-token")).thenReturn(claims);
+        when(jwtUtil.getUserIdFromToken(claims)).thenReturn(101L);
+        when(userService.getById(101L)).thenReturn(user);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/documents");
+        request.addHeader("Authorization", "Bearer admin-token");
+
+        new JwtAuthFilter(jwtUtil, userService).doFilter(request, new MockHttpServletResponse(),
+                new MockFilterChain());
+
+        assertTrue(SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_KB_ADMIN".equals(authority.getAuthority())));
+    }
 }

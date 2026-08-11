@@ -153,7 +153,7 @@ public class Qwen3VlReranker implements Reranker {
                 if (index < 0 || index >= candidates.size() || !indexes.add(index)) {
                     throw new RerankException("Qwen3-VL-Rerank 返回索引无效");
                 }
-                if (!Double.isFinite(score)) {
+                if (!Double.isFinite(score) || score < 0.0 || score > 1.0) {
                     throw new RerankException("Qwen3-VL-Rerank 返回分数无效");
                 }
                 reranked.add(candidates.get(index).withRerankScore(score));

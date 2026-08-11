@@ -212,5 +212,8 @@ public class ChatApplicationService {
         if (!command.denseEnabled() && !command.sparseEnabled()) {
             throw new BusinessException("Dense 和 Sparse 检索不能同时关闭");
         }
+        if (!command.rerankEnabled()) {
+            throw new BusinessException("可信问答必须启用重排");
+        }
     }
 }
