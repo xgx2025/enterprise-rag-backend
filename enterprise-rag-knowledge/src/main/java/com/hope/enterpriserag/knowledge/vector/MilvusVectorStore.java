@@ -146,9 +146,13 @@ public class MilvusVectorStore implements VectorStore {
         List<VectorSearchHit> denseHits = request.denseEnabled()
                 ? searchDense(request, filter, filterValues, outputFields)
                 : List.of();
+        log.info("Milvus Dense Search: query={}, tenantId={}, knowledgeBaseIds={}, documentIds={}, hits={}",
+                request.query(), request.tenantId(), request.knowledgeBaseIds(), request.documentIds(), denseHits.size());
         List<VectorSearchHit> sparseHits = request.sparseEnabled()
                 ? searchSparse(request, filter, filterValues, outputFields)
                 : List.of();
+        log.info("Milvus BM25 Search: query={}, tenantId={}, knowledgeBaseIds={}, documentIds={}, hits={}",
+                request.query(), request.tenantId(), request.knowledgeBaseIds(), request.documentIds(), sparseHits.size());
 
         List<VectorSearchHit> hybridHits;
         if (request.denseEnabled() && request.sparseEnabled()) {

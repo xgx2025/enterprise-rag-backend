@@ -1,6 +1,7 @@
 package com.hope.enterpriserag.chat.generation;
 
 import com.hope.enterpriserag.knowledge.dto.RetrievalSourceResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashSet;
@@ -15,12 +16,13 @@ import java.util.stream.Collectors;
 /**
  * 回答引用校验器，拒绝无引用和引用不存在来源编号的模型输出。
  */
+@Slf4j
 @Component
 public class CitationValidator {
     private static final Pattern CITATION_PATTERN = Pattern.compile("\\[(S\\d+)]");
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(?<![A-Za-z])\\d+(?:\\.\\d+)?%?");
     private static final Pattern SENTENCE_PATTERN = Pattern.compile(
-            "[^。！？!?；;\\n]+[。！？!?；;]?(?:\\s*\\[S\\d+])*", Pattern.MULTILINE);
+            "[^。！？!?;\\n]+[。！？!?;]?(?:\\s*\\[S\\d+])*", Pattern.MULTILINE);
 
     /** 校验回答中的所有来源编号都属于本次受控上下文。 */
     public CitationValidationResult validate(String answer, List<RetrievalSourceResponse> sources) {
@@ -34,14 +36,20 @@ public class CitationValidator {
         while (matcher.find()) {
             citedIds.add(matcher.group(1));
         }
+
         if (citedIds.isEmpty()) {
+            log.warn("引用校验失败-模型未标注任何引用: 来源数={}", sources.size());
             return new CitationValidationResult(false, List.of(), "CITATION_MISSING");
         }
         if (!allowed.keySet().containsAll(citedIds)) {
+            Set<String> outOfScope = new LinkedHashSet<>(citedIds);
+            outOfScope.removeAll(allowed.keySet());
+            log.warn("引用校验失败-模型使用了不存在的引用编号: 使用了={}, 允许={}", outOfScope, allowed.keySet());
             return new CitationValidationResult(false, List.of(), "CITATION_OUT_OF_SCOPE");
         }
         CitationValidationResult claimValidation = validateClaims(answer, allowed);
         if (!claimValidation.valid()) {
+            log.warn("引用校验失败-{}: 引用ID={}, 来源数={}", claimValidation.reason(), citedIds, sources.size());
             return claimValidation;
         }
         List<RetrievalSourceResponse> cited = sources.stream()
@@ -57,7 +65,9 @@ public class CitationValidator {
             String sentence = sentences.group().trim();
             String claim = CITATION_PATTERN.matcher(sentence).replaceAll("")
                     .replaceFirst("^[#>*\\-+\\d.、\\s]+", "").trim();
-            if (claim.isBlank() || claim.endsWith("：") || claim.endsWith(":")) {
+            if (claim.isBlank()
+                    || claim.endsWith("：") || claim.endsWith(":")
+                    || sentence.matches("^#{1,6}\\s.*")) {
                 continue;
             }
             Matcher citations = CITATION_PATTERN.matcher(sentence);

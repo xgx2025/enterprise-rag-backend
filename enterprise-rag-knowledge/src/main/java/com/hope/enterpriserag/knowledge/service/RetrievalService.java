@@ -106,6 +106,10 @@ public class RetrievalService {
                     bounded(properties.getSparseTopK(), 1, 100),
                     bounded(properties.getFusionTopK(), 1, 100),
                     bounded(properties.getRrfK(), 1, 16_383), queryEmbedding));
+            log.info("企业检索向量召回完成: tenantId={}, userId={}, traceId={}, knowledgeBases={}, denseHits={}, sparseHits={}, hybridHits={}",
+                    access.tenantId(), access.userId(), traceId, knowledgeBaseIds.size(),
+                    searchResult.denseHits().size(), searchResult.sparseHits().size(),
+                    searchResult.hybridHits().size());
             rawCount = searchResult.denseHits().size() + searchResult.sparseHits().size();
             Map<Long, DocumentChunk> chunks = loadAuthorizedChildren(searchResult, documentsById,
                     access.tenantId());
