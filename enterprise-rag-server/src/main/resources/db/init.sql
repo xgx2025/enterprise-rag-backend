@@ -228,6 +228,28 @@ CREATE TABLE IF NOT EXISTS chat_citation (
     KEY idx_chat_citation_document (tenant_id, document_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='回答引用快照';
 
+CREATE TABLE IF NOT EXISTS chat_retrieval_result (
+    id                  BIGINT UNSIGNED NOT NULL COMMENT '最终检索结果ID（雪花算法）',
+    tenant_id           BIGINT UNSIGNED NOT NULL COMMENT '租户ID',
+    message_id          BIGINT UNSIGNED NOT NULL COMMENT '助手消息ID',
+    rank_number         INT UNSIGNED NOT NULL COMMENT '最终上下文顺序，从1开始',
+    source_id           VARCHAR(20) NOT NULL COMMENT '上下文来源编号，如S1',
+    document_id         BIGINT UNSIGNED NOT NULL COMMENT '来源文档ID',
+    title               VARCHAR(256) NOT NULL,
+    version             VARCHAR(64) DEFAULT NULL,
+    effective_date      DATE DEFAULT NULL,
+    section_path        VARCHAR(500) DEFAULT NULL,
+    page_number         INT DEFAULT NULL,
+    content             MEDIUMTEXT NOT NULL COMMENT '实际进入模型上下文的片段快照',
+    security_level      TINYINT NOT NULL DEFAULT 1,
+    score               DOUBLE NOT NULL DEFAULT 0 COMMENT '最终重排相关性分数',
+    created_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_chat_retrieval_rank (message_id, rank_number),
+    UNIQUE KEY uk_chat_retrieval_source (message_id, source_id),
+    KEY idx_chat_retrieval_document (tenant_id, document_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='问答最终检索结果快照';
+
 CREATE TABLE IF NOT EXISTS chat_reasoning_step (
     id                  BIGINT UNSIGNED NOT NULL COMMENT '推理摘要步骤ID（雪花算法）',
     tenant_id           BIGINT UNSIGNED NOT NULL COMMENT '租户ID',

@@ -157,19 +157,11 @@ public class ChatApplicationService {
     }
 
     private void emitAnswerMetadata(GroundedAnswer answer, ChatProgressListener listener) {
+        for (RetrievalSourceResponse result : answer.retrieval().sources()) {
+            emit(listener, "retrieval.result", sourceData(result));
+        }
         for (RetrievalSourceResponse citation : answer.citations()) {
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("sourceId", citation.sourceId());
-            data.put("documentId", citation.documentId());
-            data.put("title", value(citation.title()));
-            data.put("version", value(citation.version()));
-            data.put("effectiveDate", citation.effectiveDate() == null ? "" : citation.effectiveDate().toString());
-            data.put("sectionPath", value(citation.sectionPath()));
-            data.put("pageNumber", citation.pageNumber() == null ? 0 : citation.pageNumber());
-            data.put("quote", value(citation.quote()));
-            data.put("securityLevel", citation.securityLevel() == null ? 1 : citation.securityLevel());
-            data.put("score", citation.score());
-            emit(listener, "citation.add", data);
+            emit(listener, "citation.add", sourceData(citation));
         }
         RetrievalStatsResponse stats = answer.retrieval().retrievalStats();
         emit(listener, "retrieval.summary", Map.of(
@@ -184,6 +176,21 @@ public class ChatApplicationService {
                 "promptTokens", usage == null ? 0 : usage.promptTokens(),
                 "completionTokens", usage == null ? 0 : usage.completionTokens(),
                 "totalTokens", usage == null ? 0 : usage.totalTokens()));
+    }
+
+    private Map<String, Object> sourceData(RetrievalSourceResponse source) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("sourceId", source.sourceId());
+        data.put("documentId", source.documentId());
+        data.put("title", value(source.title()));
+        data.put("version", value(source.version()));
+        data.put("effectiveDate", source.effectiveDate() == null ? "" : source.effectiveDate().toString());
+        data.put("sectionPath", value(source.sectionPath()));
+        data.put("pageNumber", source.pageNumber() == null ? 0 : source.pageNumber());
+        data.put("quote", value(source.quote()));
+        data.put("securityLevel", source.securityLevel() == null ? 1 : source.securityLevel());
+        data.put("score", source.score());
+        return data;
     }
 
     private String value(String value) {

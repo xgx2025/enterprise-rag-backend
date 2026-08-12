@@ -13,8 +13,10 @@ import com.hope.enterpriserag.chat.mapper.ChatConversationMapper;
 import com.hope.enterpriserag.chat.mapper.ChatMessageMapper;
 import com.hope.enterpriserag.chat.mapper.ChatRequestClaimMapper;
 import com.hope.enterpriserag.chat.mapper.ChatReasoningStepMapper;
+import com.hope.enterpriserag.chat.mapper.ChatRetrievalResultMapper;
 import com.hope.enterpriserag.chat.mapper.ChatTraceMapper;
 import com.hope.enterpriserag.knowledge.dto.RetrievalResponse;
+import com.hope.enterpriserag.knowledge.dto.RetrievalSourceResponse;
 import com.hope.enterpriserag.knowledge.dto.RetrievalStatsResponse;
 import com.hope.enterpriserag.knowledge.retrieval.RetrievalAccessContext;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,13 +45,14 @@ class ChatPersistenceServiceTest {
     private final ChatTraceMapper traceMapper = mock(ChatTraceMapper.class);
     private final ChatRequestClaimMapper requestClaimMapper = mock(ChatRequestClaimMapper.class);
     private final ChatReasoningStepMapper reasoningStepMapper = mock(ChatReasoningStepMapper.class);
+    private final ChatRetrievalResultMapper retrievalResultMapper = mock(ChatRetrievalResultMapper.class);
     private final RetrievalAccessContext access = new RetrievalAccessContext(10L, 20L, Set.of("USER"), 1);
     private ChatPersistenceService service;
 
     @BeforeEach
     void setUp() {
         service = new ChatPersistenceService(conversationMapper, messageMapper, citationMapper, traceMapper,
-                requestClaimMapper, reasoningStepMapper);
+                requestClaimMapper, reasoningStepMapper, retrievalResultMapper);
     }
 
     @Test
@@ -116,6 +119,37 @@ class ChatPersistenceServiceTest {
         verify(reasoningStepMapper).insert(step.capture());
         assertThat(step.getValue().getMessageId()).isEqualTo(31L);
         assertThat(step.getValue().getDetail()).doesNotContain("[S1] 证据");
+    }
+
+    @Test
+    void shouldPersistEveryFinalContextSourceEvenWhenAnswerDoesNotCiteIt() {
+        ChatConversation conversation = conversation();
+        ChatMessage assistant = assistant(31L, "RUNNING", null);
+        assistant.setParentMessageId(11L);
+        when(messageMapper.selectOne(any())).thenReturn(assistant);
+        when(conversationMapper.selectOne(any())).thenReturn(conversation);
+        when(conversationMapper.selectById(100L)).thenReturn(conversation);
+        ChatCommand command = new ChatCommand("问题", 100L, List.of(200L), true, true, true, 8, 12_000);
+        ChatTurnState state = new ChatTurnState(100L, 11L, 31L, command);
+        RetrievalStatsResponse stats = new RetrievalStatsResponse(2, 0, 2, 2, 12);
+        List<RetrievalSourceResponse> sources = List.of(
+                new RetrievalSourceResponse("S1", "501", "制度", "v1", null,
+                        "第一章", 1, "片段一", 1, 0.92),
+                new RetrievalSourceResponse("S2", "502", "细则", "v2", null,
+                        "第二章", 2, "片段二", 1, 0.81));
+        RetrievalResponse retrieval = new RetrievalResponse("trace-1", "问题", List.of(), List.of(), List.of(),
+                List.of(), "[S1] 片段一\n\n[S2] 片段二", "CONTEXT_READY", Map.of("total", 12L), sources, stats);
+        GroundedAnswer answer = new GroundedAnswer("证据不足", AnswerStatus.INSUFFICIENT, List.of(), retrieval,
+                null, "test-model", List.of());
+
+        service.completeTurn(access, state, answer);
+
+        ArgumentCaptor<com.hope.enterpriserag.chat.entity.ChatRetrievalResult> result =
+                ArgumentCaptor.forClass(com.hope.enterpriserag.chat.entity.ChatRetrievalResult.class);
+        verify(retrievalResultMapper, org.mockito.Mockito.times(2)).insert(result.capture());
+        assertThat(result.getAllValues()).extracting("sourceId").containsExactly("S1", "S2");
+        assertThat(result.getAllValues()).extracting("score").containsExactly(0.92, 0.81);
+        verify(citationMapper, never()).insert(any(com.hope.enterpriserag.chat.entity.ChatCitation.class));
     }
 
     @Test
