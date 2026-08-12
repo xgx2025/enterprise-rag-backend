@@ -55,8 +55,10 @@ class GroundedAnswerServiceTest {
 
         assertThat(answer.status()).isEqualTo(AnswerStatus.SUPPORTED);
         assertThat(answer.citations()).extracting(RetrievalSourceResponse::sourceId).containsExactly("S1");
-        assertThat(stages).containsExactly("retrieval.started", "retrieval.completed", "rerank.completed",
-                "generation.started", "citation.completed");
+        assertThat(stages).contains("retrieval.started", "retrieval.completed", "rerank.completed",
+                "generation.started", "citation.completed", "reasoning.step");
+        assertThat(answer.reasoningSteps()).extracting(ReasoningStep::id)
+                .containsExactly("understanding", "retrieval", "rerank", "evidence", "generation", "citation");
         ArgumentCaptor<ChatModelPrompt> prompt = ArgumentCaptor.forClass(ChatModelPrompt.class);
         verify(chatModel).generate(prompt.capture());
         assertThat(prompt.getValue().userPrompt()).contains("受控证据", "[S1]", "深圳住宿上限为 500 元");

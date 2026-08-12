@@ -15,6 +15,11 @@ public record GroundedAnswer(
         List<RetrievalSourceResponse> citations,
         RetrievalResponse retrieval,
         ChatModelResult modelResult,
-        String modelName
+        String modelName,
+        List<ReasoningStep> reasoningSteps
 ) {
+    public GroundedAnswer {
+        citations = citations == null ? List.of() : List.copyOf(citations);
+        reasoningSteps = reasoningSteps == null ? List.of() : List.copyOf(reasoningSteps);
+    }
 }

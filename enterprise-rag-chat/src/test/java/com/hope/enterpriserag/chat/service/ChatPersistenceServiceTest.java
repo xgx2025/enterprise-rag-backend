@@ -3,6 +3,7 @@ package com.hope.enterpriserag.chat.service;
 import com.hope.enterpriserag.chat.command.ChatCommand;
 import com.hope.enterpriserag.chat.entity.ChatConversation;
 import com.hope.enterpriserag.chat.entity.ChatMessage;
+import com.hope.enterpriserag.chat.entity.ChatReasoningStep;
 import com.hope.enterpriserag.chat.entity.ChatTrace;
 import com.hope.enterpriserag.chat.entity.ChatRequestClaim;
 import com.hope.enterpriserag.chat.generation.AnswerStatus;
@@ -11,6 +12,7 @@ import com.hope.enterpriserag.chat.mapper.ChatCitationMapper;
 import com.hope.enterpriserag.chat.mapper.ChatConversationMapper;
 import com.hope.enterpriserag.chat.mapper.ChatMessageMapper;
 import com.hope.enterpriserag.chat.mapper.ChatRequestClaimMapper;
+import com.hope.enterpriserag.chat.mapper.ChatReasoningStepMapper;
 import com.hope.enterpriserag.chat.mapper.ChatTraceMapper;
 import com.hope.enterpriserag.knowledge.dto.RetrievalResponse;
 import com.hope.enterpriserag.knowledge.dto.RetrievalStatsResponse;
@@ -40,13 +42,14 @@ class ChatPersistenceServiceTest {
     private final ChatCitationMapper citationMapper = mock(ChatCitationMapper.class);
     private final ChatTraceMapper traceMapper = mock(ChatTraceMapper.class);
     private final ChatRequestClaimMapper requestClaimMapper = mock(ChatRequestClaimMapper.class);
+    private final ChatReasoningStepMapper reasoningStepMapper = mock(ChatReasoningStepMapper.class);
     private final RetrievalAccessContext access = new RetrievalAccessContext(10L, 20L, Set.of("USER"), 1);
     private ChatPersistenceService service;
 
     @BeforeEach
     void setUp() {
         service = new ChatPersistenceService(conversationMapper, messageMapper, citationMapper, traceMapper,
-                requestClaimMapper);
+                requestClaimMapper, reasoningStepMapper);
     }
 
     @Test
@@ -88,6 +91,31 @@ class ChatPersistenceServiceTest {
         assertThat(replacement.getStatus()).isEqualTo("COMPLETED");
         assertThat(previous.getStatus()).isEqualTo("SUPERSEDED");
         verify(traceMapper).insert(any(ChatTrace.class));
+    }
+
+    @Test
+    void shouldPersistSafeReasoningSummaryWithCompletedAnswer() {
+        ChatConversation conversation = conversation();
+        ChatMessage replacement = assistant(31L, "RUNNING", null);
+        replacement.setParentMessageId(11L);
+        when(messageMapper.selectOne(any())).thenReturn(replacement);
+        when(conversationMapper.selectOne(any())).thenReturn(conversation);
+        when(conversationMapper.selectById(100L)).thenReturn(conversation);
+        ChatCommand command = new ChatCommand("问题", 100L, List.of(200L), true, true, true, 8, 12_000);
+        ChatTurnState state = new ChatTurnState(100L, 11L, 31L, command);
+        RetrievalStatsResponse stats = new RetrievalStatsResponse(1, 0, 1, 1, 12);
+        RetrievalResponse retrieval = new RetrievalResponse("trace-1", "问题", List.of(), List.of(), List.of(),
+                List.of(), "[S1] 证据", "CONTEXT_READY", Map.of("total", 12L), List.of(), stats);
+        GroundedAnswer answer = new GroundedAnswer("回答。[S1]", AnswerStatus.SUPPORTED, List.of(), retrieval,
+                null, "test-model", List.of(new com.hope.enterpriserag.chat.generation.ReasoningStep(
+                "retrieval", "检索知识库", "检索完成，获得 1 条候选依据", "COMPLETED")));
+
+        service.completeTurn(access, state, answer);
+
+        ArgumentCaptor<ChatReasoningStep> step = ArgumentCaptor.forClass(ChatReasoningStep.class);
+        verify(reasoningStepMapper).insert(step.capture());
+        assertThat(step.getValue().getMessageId()).isEqualTo(31L);
+        assertThat(step.getValue().getDetail()).doesNotContain("[S1] 证据");
     }
 
     @Test
@@ -161,6 +189,7 @@ class ChatPersistenceServiceTest {
         RetrievalStatsResponse stats = new RetrievalStatsResponse(1, 0, 1, 1, 12);
         RetrievalResponse retrieval = new RetrievalResponse("trace-1", "问题", List.of(), List.of(), List.of(),
                 List.of(), "[S1] 证据", "CONTEXT_READY", Map.of("total", 12L), List.of(), stats);
-        return new GroundedAnswer("回答。[S1]", AnswerStatus.SUPPORTED, List.of(), retrieval, null, "test-model");
+        return new GroundedAnswer("回答。[S1]", AnswerStatus.SUPPORTED, List.of(), retrieval, null,
+                "test-model", List.of());
     }
 }

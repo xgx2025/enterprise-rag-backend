@@ -9,18 +9,22 @@ import com.google.gson.reflect.TypeToken;
 import com.hope.enterpriserag.chat.command.ChatCommand;
 import com.hope.enterpriserag.chat.dto.ChatCitationResponse;
 import com.hope.enterpriserag.chat.dto.ChatMessageResponse;
+import com.hope.enterpriserag.chat.dto.ChatReasoningStepResponse;
 import com.hope.enterpriserag.chat.dto.ConversationResponse;
 import com.hope.enterpriserag.chat.entity.ChatCitation;
 import com.hope.enterpriserag.chat.entity.ChatConversation;
 import com.hope.enterpriserag.chat.entity.ChatMessage;
 import com.hope.enterpriserag.chat.entity.ChatRequestClaim;
+import com.hope.enterpriserag.chat.entity.ChatReasoningStep;
 import com.hope.enterpriserag.chat.entity.ChatTrace;
 import com.hope.enterpriserag.chat.generation.ChatTurn;
 import com.hope.enterpriserag.chat.generation.GroundedAnswer;
+import com.hope.enterpriserag.chat.generation.ReasoningStep;
 import com.hope.enterpriserag.chat.mapper.ChatCitationMapper;
 import com.hope.enterpriserag.chat.mapper.ChatConversationMapper;
 import com.hope.enterpriserag.chat.mapper.ChatMessageMapper;
 import com.hope.enterpriserag.chat.mapper.ChatRequestClaimMapper;
+import com.hope.enterpriserag.chat.mapper.ChatReasoningStepMapper;
 import com.hope.enterpriserag.chat.mapper.ChatTraceMapper;
 import com.hope.enterpriserag.common.exception.BusinessException;
 import com.hope.enterpriserag.knowledge.dto.RetrievalStatsResponse;
@@ -57,6 +61,7 @@ public class ChatPersistenceService {
     private final ChatCitationMapper citationMapper;
     private final ChatTraceMapper traceMapper;
     private final ChatRequestClaimMapper requestClaimMapper;
+    private final ChatReasoningStepMapper reasoningStepMapper;
     private final Gson gson = new Gson();
 
     /** 创建空会话，后续首次提问会更新标题、知识库范围和检索策略。 */
@@ -97,8 +102,10 @@ public class ChatPersistenceService {
                 .orderByAsc(ChatMessage::getCreatedAt)
                 .orderByAsc(ChatMessage::getId));
         Map<Long, List<ChatCitation>> citations = citations(messages);
+        Map<Long, List<ChatReasoningStep>> reasoningSteps = reasoningSteps(messages);
         return response(conversation, messages.stream()
-                .map(message -> response(message, citations.getOrDefault(message.getId(), List.of())))
+                .map(message -> response(message, citations.getOrDefault(message.getId(), List.of()),
+                        reasoningSteps.getOrDefault(message.getId(), List.of())))
                 .toList());
     }
 
@@ -220,7 +227,8 @@ public class ChatPersistenceService {
         }
         traceMapper.insert(trace(access, state, answer, now));
         touchConversation(state.conversationId(), now);
-        return response(assistant, citations);
+        List<ChatReasoningStep> reasoningSteps = saveReasoningSteps(access, assistant.getId(), answer, now);
+        return response(assistant, citations, reasoningSteps);
     }
 
     /** 将运行中的助手消息标记为失败，错误信息仅保存安全摘要。 */
@@ -434,6 +442,40 @@ public class ChatPersistenceService {
                         LinkedHashMap::new, Collectors.toList()));
     }
 
+    private Map<Long, List<ChatReasoningStep>> reasoningSteps(List<ChatMessage> messages) {
+        List<Long> ids = messages.stream().filter(message -> "ASSISTANT".equals(message.getRole()))
+                .map(ChatMessage::getId).toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return reasoningStepMapper.selectList(new LambdaQueryWrapper<ChatReasoningStep>()
+                        .in(ChatReasoningStep::getMessageId, ids)
+                        .orderByAsc(ChatReasoningStep::getSequenceNumber))
+                .stream().collect(Collectors.groupingBy(ChatReasoningStep::getMessageId,
+                        LinkedHashMap::new, Collectors.toList()));
+    }
+
+    private List<ChatReasoningStep> saveReasoningSteps(RetrievalAccessContext access, Long messageId,
+                                                       GroundedAnswer answer, LocalDateTime now) {
+        List<ChatReasoningStep> saved = new ArrayList<>();
+        for (int index = 0; index < answer.reasoningSteps().size(); index++) {
+            ReasoningStep source = answer.reasoningSteps().get(index);
+            ChatReasoningStep value = new ChatReasoningStep();
+            value.setId(IdUtil.getSnowflakeNextId());
+            value.setTenantId(access.tenantId());
+            value.setMessageId(messageId);
+            value.setSequenceNumber(index);
+            value.setStepKey(source.id());
+            value.setTitle(source.title());
+            value.setDetail(source.detail());
+            value.setStatus(source.status());
+            value.setCreatedAt(now);
+            reasoningStepMapper.insert(value);
+            saved.add(value);
+        }
+        return List.copyOf(saved);
+    }
+
     private ConversationResponse response(ChatConversation conversation, List<ChatMessageResponse> messages) {
         return new ConversationResponse(String.valueOf(conversation.getId()), conversation.getTitle(),
                 parseIds(conversation.getKnowledgeBaseIds()).stream().map(String::valueOf).toList(),
@@ -441,13 +483,19 @@ public class ChatPersistenceService {
                 conversation.getCreatedAt(), conversation.getUpdatedAt());
     }
 
-    private ChatMessageResponse response(ChatMessage message, List<ChatCitation> citations) {
+    private ChatMessageResponse response(ChatMessage message, List<ChatCitation> citations,
+                                         List<ChatReasoningStep> reasoningSteps) {
         return new ChatMessageResponse(String.valueOf(message.getId()),
                 message.getRole().toLowerCase(Locale.ROOT), message.getContent(),
-                citations.stream().map(this::response).toList(), message.getAnswerStatus(),
+                citations.stream().map(this::response).toList(),
+                reasoningSteps.stream().map(this::response).toList(), message.getAnswerStatus(),
                 parseStats(message.getRetrievalStats()), message.getCreatedAt(),
                 "RUNNING".equals(message.getStatus()), message.getStatus(), message.getTraceId(),
                 message.getErrorCode(), message.getErrorMessage());
+    }
+
+    private ChatReasoningStepResponse response(ChatReasoningStep step) {
+        return new ChatReasoningStepResponse(step.getStepKey(), step.getTitle(), step.getDetail(), step.getStatus());
     }
 
     private ChatCitationResponse response(ChatCitation citation) {

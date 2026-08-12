@@ -212,6 +212,21 @@ CREATE TABLE IF NOT EXISTS chat_citation (
     KEY idx_chat_citation_document (tenant_id, document_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='回答引用快照';
 
+CREATE TABLE IF NOT EXISTS chat_reasoning_step (
+    id                  BIGINT UNSIGNED NOT NULL COMMENT '推理摘要步骤ID（雪花算法）',
+    tenant_id           BIGINT UNSIGNED NOT NULL COMMENT '租户ID',
+    message_id          BIGINT UNSIGNED NOT NULL COMMENT '助手消息ID',
+    sequence_number     INT UNSIGNED NOT NULL COMMENT '消息内展示顺序，从0开始',
+    step_key            VARCHAR(64) NOT NULL COMMENT '稳定阶段标识',
+    title               VARCHAR(128) NOT NULL COMMENT '面向用户的阶段标题',
+    detail              VARCHAR(500) NOT NULL COMMENT '不包含Prompt和正文的安全摘要',
+    status              VARCHAR(20) NOT NULL COMMENT 'RUNNING/COMPLETED/FAILED',
+    created_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_chat_reasoning_sequence (message_id, sequence_number),
+    KEY idx_chat_reasoning_owner (tenant_id, message_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户可见的问答推理摘要';
+
 CREATE TABLE IF NOT EXISTS chat_trace (
     id                  BIGINT UNSIGNED NOT NULL COMMENT 'Trace记录ID（雪花算法）',
     trace_id            VARCHAR(64) NOT NULL COMMENT '检索链路Trace ID',

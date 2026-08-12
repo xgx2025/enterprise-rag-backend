@@ -18,6 +18,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -54,7 +55,13 @@ public class GroundedAnswerService {
         validate(command);
         ChatProgressListener effectiveListener = listener == null ? ChatProgressListener.NOOP : listener;
         ChatCancellationToken token = cancellationToken == null ? new ChatCancellationToken() : cancellationToken;
+        List<ReasoningStep> reasoningSteps = new ArrayList<>();
         token.throwIfCancelled();
+        reasoning(reasoningSteps, effectiveListener, "understanding", "理解问题",
+                history == null || history.isEmpty() ? "已识别当前问题与知识库范围"
+                        : "已结合最近对话识别当前问题与知识库范围", "COMPLETED");
+        reasoning(reasoningSteps, effectiveListener, "retrieval", "检索知识库",
+                "正在从用户有权访问的知识库中查找相关依据", "RUNNING");
         effectiveListener.onEvent(event("retrieval.started"));
 
         String retrievalQuery = rewriteRetrievalQuery(command.query(), history);
@@ -68,14 +75,26 @@ public class GroundedAnswerService {
                 "elapsedMs", retrieval.retrievalStats().totalTimeMs())));
         effectiveListener.onEvent(event("rerank.completed", Map.of(
                 "candidateCount", retrieval.rerankResults().size())));
+        reasoning(reasoningSteps, effectiveListener, "retrieval", "检索知识库",
+                "检索完成，获得 " + retrieval.retrievalStats().totalRetrieved()
+                        + " 条候选依据，权限过滤 " + retrieval.retrievalStats().permissionFiltered() + " 条",
+                "COMPLETED");
+        reasoning(reasoningSteps, effectiveListener, "rerank", "筛选相关依据",
+                "重排后保留 " + retrieval.retrievalStats().rerankKept() + " 条高相关依据", "COMPLETED");
 
         if (!hasEnoughEvidence(retrieval.sources())) {
+            reasoning(reasoningSteps, effectiveListener, "evidence", "评估证据充分性",
+                    "现有依据未达到可信回答门槛，将返回证据不足提示", "COMPLETED");
             effectiveListener.onEvent(event("citation.completed", Map.of(
                     "valid", false, "reason", "EVIDENCE_INSUFFICIENT")));
-            return insufficient(retrieval);
+            return insufficient(retrieval, reasoningSteps);
         }
 
         token.throwIfCancelled();
+        reasoning(reasoningSteps, effectiveListener, "evidence", "评估证据充分性",
+                "已找到满足可信度门槛的依据，可以生成回答", "COMPLETED");
+        reasoning(reasoningSteps, effectiveListener, "generation", "组织回答",
+                "正在依据已筛选的证据组织回答和来源标记", "RUNNING");
         effectiveListener.onEvent(event("generation.started", Map.of("model", chatModel.modelName())));
         ChatModelResult modelResult;
         try {
@@ -87,11 +106,15 @@ public class GroundedAnswerService {
             throw e;
         }
         token.throwIfCancelled();
+        reasoning(reasoningSteps, effectiveListener, "generation", "组织回答",
+                "回答草稿已生成，正在进行引用一致性校验", "COMPLETED");
         if (INSUFFICIENT_MARKER.equalsIgnoreCase(modelResult.content().trim())) {
+            reasoning(reasoningSteps, effectiveListener, "citation", "校验引用",
+                    "模型判断现有依据不足，将返回安全拒答", "COMPLETED");
             effectiveListener.onEvent(event("citation.completed", Map.of(
                     "valid", false, "reason", "MODEL_REFUSED")));
             return new GroundedAnswer(properties.getRefusalText(), AnswerStatus.INSUFFICIENT, List.of(),
-                    retrieval, modelResult, chatModel.modelName());
+                    retrieval, modelResult, chatModel.modelName(), reasoningSteps);
         }
 
         CitationValidationResult validation = citationValidator.validate(modelResult.content(), retrieval.sources());
@@ -100,13 +123,17 @@ public class GroundedAnswerService {
                 "citationCount", validation.citedSources().size(),
                 "reason", validation.reason() == null ? "OK" : validation.reason())));
         if (!validation.valid()) {
+            reasoning(reasoningSteps, effectiveListener, "citation", "校验引用",
+                    "引用未通过一致性校验，将返回证据不足提示", "FAILED");
             log.warn("模型回答引用校验失败并拒答: traceId={}, model={}, reason={}",
                     retrieval.traceId(), chatModel.modelName(), validation.reason());
             return new GroundedAnswer(properties.getRefusalText(), AnswerStatus.INSUFFICIENT, List.of(),
-                    retrieval, modelResult, chatModel.modelName());
+                    retrieval, modelResult, chatModel.modelName(), reasoningSteps);
         }
+        reasoning(reasoningSteps, effectiveListener, "citation", "校验引用",
+                "引用校验通过，共确认 " + validation.citedSources().size() + " 个有效来源", "COMPLETED");
         return new GroundedAnswer(modelResult.content(), AnswerStatus.SUPPORTED,
-                validation.citedSources(), retrieval, modelResult, chatModel.modelName());
+                validation.citedSources(), retrieval, modelResult, chatModel.modelName(), reasoningSteps);
     }
 
     private ChatModelPrompt prompt(String query, List<ChatTurn> history, String context) {
@@ -165,9 +192,9 @@ public class GroundedAnswerService {
                 >= properties.getMinimumEvidenceScore();
     }
 
-    private GroundedAnswer insufficient(RetrievalResponse retrieval) {
+    private GroundedAnswer insufficient(RetrievalResponse retrieval, List<ReasoningStep> reasoningSteps) {
         return new GroundedAnswer(properties.getRefusalText(), AnswerStatus.INSUFFICIENT, List.of(),
-                retrieval, null, chatModel.modelName());
+                retrieval, null, chatModel.modelName(), reasoningSteps);
     }
 
     private void validate(ChatCommand command) {
@@ -191,5 +218,28 @@ public class GroundedAnswerService {
 
     private ChatProgressEvent event(String type, Map<String, Object> data) {
         return new ChatProgressEvent(type, new LinkedHashMap<>(data));
+    }
+
+    private void reasoning(List<ReasoningStep> steps, ChatProgressListener listener,
+                           String id, String title, String detail, String status) {
+        ReasoningStep step = new ReasoningStep(id, title, detail, status);
+        for (int index = 0; index < steps.size(); index++) {
+            if (steps.get(index).id().equals(id)) {
+                steps.set(index, step);
+                listener.onEvent(event("reasoning.step", reasoningData(step)));
+                return;
+            }
+        }
+        steps.add(step);
+        listener.onEvent(event("reasoning.step", reasoningData(step)));
+    }
+
+    private Map<String, Object> reasoningData(ReasoningStep step) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("id", step.id());
+        data.put("title", step.title());
+        data.put("detail", step.detail());
+        data.put("status", step.status());
+        return data;
     }
 }
