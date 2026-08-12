@@ -53,6 +53,13 @@ public class UserService {
         ) > 0;
     }
 
+    /** 判断邮箱是否已被账号占用；邮箱是唯一登录标识。 */
+    public boolean existsByEmail(String email) {
+        return userMapper.selectCount(
+                new LambdaQueryWrapper<User>().eq(User::getEmail, email)
+        ) > 0;
+    }
+
     /** 创建新用户，自动填充雪花 ID 和时间字段 */
     @Transactional
     public void create(User user) {

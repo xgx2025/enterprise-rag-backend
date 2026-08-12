@@ -21,13 +21,13 @@ public class User {
     private Long id;
     /** 所属租户 ID */
     private Long tenantId;
-    /** 登录用户名，全局唯一 */
+    /** 用户名，全局唯一，仅作为展示标识，不用于登录。 */
     private String username;
     /** BCrypt 加密后的密码 */
     private String password;
     /** 真实姓名 */
     private String realName;
-    /** 邮箱，用于验证码和密码重置 */
+    /** 邮箱，全局唯一，用于登录、验证码和密码重置。 */
     private String email;
     /** 手机号 */
     private String phone;

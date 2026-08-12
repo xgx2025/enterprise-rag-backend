@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
 
     PRIMARY KEY (id),
     UNIQUE KEY uk_username (username),
+    UNIQUE KEY uk_user_email (email),
     KEY idx_tenant_id (tenant_id)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
@@ -63,6 +64,21 @@ ON DUPLICATE KEY UPDATE
 
 ALTER TABLE sys_user
     MODIFY COLUMN id BIGINT UNSIGNED NOT NULL COMMENT '用户ID（Hutool 雪花算法生成）';
+
+-- 兼容已经创建的数据库：邮箱是无租户参数登录时的全局唯一标识。
+SET @email_index_sql = IF(
+    EXISTS(
+        SELECT 1 FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND table_name = 'sys_user'
+          AND index_name = 'uk_user_email'
+    ),
+    'SELECT 1',
+    'ALTER TABLE sys_user ADD UNIQUE KEY uk_user_email (email)'
+);
+PREPARE email_index_statement FROM @email_index_sql;
+EXECUTE email_index_statement;
+DEALLOCATE PREPARE email_index_statement;
 
 CREATE TABLE IF NOT EXISTS kb_knowledge_base (
     id                  BIGINT UNSIGNED NOT NULL COMMENT '知识库ID',

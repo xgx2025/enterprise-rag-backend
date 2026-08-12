@@ -10,7 +10,7 @@ import com.hope.enterpriserag.security.dto.ResetPasswordRequest;
  */
 public interface AuthService {
 
-    /** 用户名 + 密码登录，返回 Token 对和用户信息 */
+    /** 邮箱 + 密码登录，返回 Token 对和用户信息。 */
     LoginResponse login(LoginRequest request);
 
     /** 使用 refresh token 刷新 Token 对（轮转机制，旧 token 一次性使用） */

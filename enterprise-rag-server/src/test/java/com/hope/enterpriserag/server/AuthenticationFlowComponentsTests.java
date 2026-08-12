@@ -1,10 +1,12 @@
 package com.hope.enterpriserag.server;
 
 import com.hope.enterpriserag.security.dto.RegisterRequest;
+import com.hope.enterpriserag.security.dto.LoginRequest;
 import com.hope.enterpriserag.security.dto.ResetPasswordRequest;
 import com.hope.enterpriserag.system.entity.SysTenant;
 import com.hope.enterpriserag.system.entity.User;
 import com.hope.enterpriserag.common.exception.BusinessException;
+import com.hope.enterpriserag.security.exception.AuthException;
 import com.hope.enterpriserag.system.mapper.SysTenantMapper;
 import com.hope.enterpriserag.system.mapper.UserMapper;
 import com.hope.enterpriserag.system.mapper.UserAccessProfileMapper;
@@ -55,6 +57,7 @@ class AuthenticationFlowComponentsTests {
         SysTenant tenant = new SysTenant();
         tenant.setId(23L);
         when(userService.existsByUsername("new-user")).thenReturn(false);
+        when(userService.existsByEmail("user@example.com")).thenReturn(false);
         when(tenantMapper.selectOne(any())).thenReturn(tenant);
         when(emailService.verifyCode("user@example.com", "123456")).thenReturn(true);
 
@@ -73,6 +76,40 @@ class AuthenticationFlowComponentsTests {
         verify(userService).create(userCaptor.capture());
         assertEquals(23L, userCaptor.getValue().getTenantId());
         assertTrue(passwordEncoder.matches("secret123", userCaptor.getValue().getPassword()));
+    }
+
+    @Test
+    void loginUsesNormalizedEmailInsteadOfUsername() {
+        when(userService.getByEmail("user@example.com")).thenReturn(null);
+        AuthServiceImpl authService = new AuthServiceImpl(
+                userService, jwtUtil, redisTemplate, new BCryptPasswordEncoder(), emailService, tenantMapper
+        );
+        LoginRequest request = new LoginRequest();
+        request.setEmail(" User@Example.COM ");
+        request.setPassword("secret123");
+
+        AuthException exception = assertThrows(AuthException.class, () -> authService.login(request));
+
+        assertEquals("邮箱或密码错误", exception.getMessage());
+        verify(userService).getByEmail("user@example.com");
+        verify(userService, never()).getByUsername(any());
+    }
+
+    @Test
+    void duplicateEmailDoesNotConsumeVerificationCode() {
+        when(userService.existsByUsername("new-user")).thenReturn(false);
+        when(userService.existsByEmail("user@example.com")).thenReturn(true);
+        AuthServiceImpl authService = new AuthServiceImpl(
+                userService, jwtUtil, redisTemplate, new BCryptPasswordEncoder(), emailService, tenantMapper
+        );
+        RegisterRequest request = new RegisterRequest();
+        request.setUsername("new-user");
+        request.setEmail("User@Example.COM");
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> authService.register(request));
+
+        assertEquals("邮箱已被注册", exception.getMessage());
+        verify(emailService, never()).verifyCode(any(), any());
     }
 
     @Test

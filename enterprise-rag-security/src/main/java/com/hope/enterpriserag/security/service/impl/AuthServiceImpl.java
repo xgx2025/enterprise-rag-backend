@@ -21,6 +21,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -48,18 +49,19 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public LoginResponse login(LoginRequest request) {
-        User user = userService.getByUsername(request.getUsername());
+        String email = normalizeEmail(request.getEmail());
+        User user = userService.getByEmail(email);
         if (user == null) {
-            log.warn("登录失败-用户不存在: username={}", request.getUsername());
-            throw new AuthException("用户名或密码错误");
+            log.warn("登录失败-邮箱未注册");
+            throw new AuthException("邮箱或密码错误");
         }
         if (user.getStatus() != null && user.getStatus() == 0) {
-            log.warn("登录失败-账号已禁用: userId={}, username={}", user.getId(), request.getUsername());
+            log.warn("登录失败-账号已禁用: userId={}", user.getId());
             throw new AuthException("账号已被禁用");
         }
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            log.warn("登录失败-密码错误: userId={}, username={}", user.getId(), request.getUsername());
-            throw new AuthException("用户名或密码错误");
+            log.warn("登录失败-密码错误: userId={}", user.getId());
+            throw new AuthException("邮箱或密码错误");
         }
 
         String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getTenantId());
@@ -156,10 +158,15 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void register(RegisterRequest request) {
+        String email = normalizeEmail(request.getEmail());
         // 检查用户名是否已存在
         if (userService.existsByUsername(request.getUsername())) {
             log.warn("注册失败-用户名已存在: username={}", request.getUsername());
             throw new BusinessException("用户名已被注册");
+        }
+        if (userService.existsByEmail(email)) {
+            log.warn("注册失败-邮箱已被占用");
+            throw new BusinessException("邮箱已被注册");
         }
 
         SysTenant defaultTenant = tenantMapper.selectOne(
@@ -171,8 +178,8 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // 先校验验证码再创建用户，避免验证码错误时已插入脏数据
-        if (!emailService.verifyCode(request.getEmail(), request.getCode())) {
-            log.warn("注册失败-验证码错误: email={}", request.getEmail());
+        if (!emailService.verifyCode(email, request.getCode())) {
+            log.warn("注册失败-验证码错误");
             throw new BusinessException("验证码错误或已过期");
         }
 
@@ -180,7 +187,7 @@ public class AuthServiceImpl implements AuthService {
         User user = new User();
         user.setUsername(request.getUsername());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setEmail(request.getEmail());
+        user.setEmail(email);
         user.setRealName(request.getUsername());
         user.setTenantId(defaultTenant.getId());
         user.setStatus(1);
@@ -191,18 +198,23 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void resetPassword(ResetPasswordRequest request) {
-        User user = userService.getByEmail(request.getEmail());
+        String email = normalizeEmail(request.getEmail());
+        User user = userService.getByEmail(email);
         if (user == null) {
-            log.warn("密码重置失败-邮箱未注册: email={}", request.getEmail());
+            log.warn("密码重置失败-邮箱未注册");
             throw new BusinessException("该邮箱未注册");
         }
-        if (!emailService.verifyCode(request.getEmail(), request.getCode())) {
-            log.warn("密码重置失败-验证码错误: email={}", request.getEmail());
+        if (!emailService.verifyCode(email, request.getCode())) {
+            log.warn("密码重置失败-验证码错误: userId={}", user.getId());
             throw new BusinessException("验证码错误或已过期");
         }
         userService.updatePassword(user, passwordEncoder.encode(request.getNewPassword()));
         // 密码重置后清除所有 refresh token，强制重新登录
         redisTemplate.delete("refresh_token:" + user.getId());
-        log.info("密码重置成功: userId={}, email={}", user.getId(), request.getEmail());
+        log.info("密码重置成功: userId={}", user.getId());
+    }
+
+    private String normalizeEmail(String email) {
+        return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
     }
 }

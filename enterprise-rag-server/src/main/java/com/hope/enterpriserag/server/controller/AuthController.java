@@ -39,11 +39,11 @@ public class AuthController {
     private final AuthService authService;
     private final EmailService emailService;
 
-    /** 用户名 + 密码登录 */
+    /** 邮箱 + 密码登录。 */
     @PostMapping("/login")
     public Result<LoginResponse> login(@Valid @RequestBody LoginRequest request,
                                         HttpServletResponse response) {
-        log.info("用户登录请求: username={}", request.getUsername());
+        log.debug("用户登录请求");
         LoginResponse loginResponse = authService.login(request);
         setRefreshTokenCookie(response, loginResponse.getRefreshToken());
         loginResponse.setRefreshToken(null);
@@ -81,7 +81,7 @@ public class AuthController {
     /** 用户注册 */
     @PostMapping("/register")
     public Result<Void> register(@Valid @RequestBody RegisterRequest request) {
-        log.info("用户注册请求: username={}, email={}", request.getUsername(), request.getEmail());
+        log.info("用户注册请求: username={}", request.getUsername());
         authService.register(request);
         log.info("用户注册成功: username={}", request.getUsername());
         return Result.ok();
@@ -90,16 +90,16 @@ public class AuthController {
     /** 通过邮箱验证码重置密码 */
     @PostMapping("/reset-password")
     public Result<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-        log.info("密码重置请求: email={}", request.getEmail());
+        log.debug("密码重置请求");
         authService.resetPassword(request);
-        log.info("密码重置成功: email={}", request.getEmail());
+        log.info("密码重置成功");
         return Result.ok();
     }
 
     /** 发送邮箱验证码 */
     @PostMapping("/send-code")
     public Result<Void> sendCode(@Valid @RequestBody SendCodeRequest request) {
-        log.info("验证码发送请求: email={}", request.getEmail());
+        log.debug("验证码发送请求");
         emailService.sendVerificationCode(request.getEmail());
         return Result.ok();
     }

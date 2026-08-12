@@ -10,6 +10,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
 import java.util.Random;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -36,20 +37,21 @@ public class EmailService {
      * @throws BusinessException 如果 60 秒内重复发送
      */
     public void sendVerificationCode(String to) {
-        String rateLimitKey = "email_code:ratelimit:" + to;
+        String normalizedEmail = normalizeEmail(to);
+        String rateLimitKey = "email_code:ratelimit:" + normalizedEmail;
         Boolean canSend = redisTemplate.opsForValue()
                 .setIfAbsent(rateLimitKey, "1", 60, TimeUnit.SECONDS);
         if (Boolean.FALSE.equals(canSend)) {
-            log.warn("验证码发送频率限制触发: email={}", to);
+            log.warn("验证码发送频率限制触发");
             throw new BusinessException("验证码已发送，请60秒后再试");
         }
 
         String code = generateCode();
-        String codeKey = "email_code:" + to;
+        String codeKey = "email_code:" + normalizedEmail;
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(from);
-        message.setTo(to);
+        message.setTo(normalizedEmail);
         message.setSubject("Enterprise RAG - 邮箱验证码");
         message.setText("您的验证码是：" + code + "，有效期 5 分钟。");
 
@@ -57,10 +59,10 @@ public class EmailService {
             mailSender.send(message);
             // 邮件发送成功后才将验证码写入 Redis
             redisTemplate.opsForValue().set(codeKey, code, 5, TimeUnit.MINUTES);
-            log.info("验证码发送成功: email={}", to);
+            log.info("验证码发送成功");
         } catch (RuntimeException e) {
             redisTemplate.delete(rateLimitKey);
-            log.error("验证码邮件发送失败: email={}", to, e);
+            log.error("验证码邮件发送失败", e);
             throw e;
         }
     }
@@ -73,7 +75,7 @@ public class EmailService {
      * @return true 验证通过，false 验证码不存在或不匹配
      */
     public boolean verifyCode(String email, String code) {
-        String codeKey = "email_code:" + email;
+        String codeKey = "email_code:" + normalizeEmail(email);
         String storedCode = redisTemplate.opsForValue().get(codeKey);
         if (storedCode == null) {
             return false;
@@ -88,5 +90,9 @@ public class EmailService {
     /** 生成 6 位随机数字验证码 */
     private String generateCode() {
         return String.format("%06d", new Random().nextInt(1000000));
+    }
+
+    private String normalizeEmail(String email) {
+        return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
     }
 }
